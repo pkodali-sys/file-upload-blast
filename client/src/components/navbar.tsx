@@ -16,8 +16,8 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-16">
           {/* Logo and Brand */}
           <div className="flex items-center space-x-4">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm">FI</span>
+            <div className="w-10 h-10 bg-primary rounded-xs flex items-center justify-center">
+              <span className="text-primary-foreground font-bold text-lg">FI</span>
             </div>
             <div>
               <h1 className="text-lg font-semibold text-foreground" data-testid="text-brand-name">File Upload</h1>

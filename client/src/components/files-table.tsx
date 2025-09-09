@@ -14,7 +14,8 @@ import {
   ChevronLeftIcon, 
   ChevronRightIcon,
   LoaderIcon,
-  LinkIcon
+  LinkIcon,
+  FileIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -45,34 +46,53 @@ interface FilesTableProps {
   category: string;
 }
 
+// const getFileIcon = (mimeType: string) => {
+//   if (mimeType.startsWith('image/')) {
+//     return <ImageIcon className="w-4 h-4 text-chart-2" />;
+//   } if(mimeType === "application/msword" || mimeType === "application/vnd.openxmlformats-oficedocument.wordprocessingml.document"){
+//     return <FileIcon className="w-4 h-4 text-chart-1" />
+//   }
+//   return <FileTextIcon className="w-4 h-4 text-destructive" />;
+// };
+
 const getFileIcon = (mimeType: string) => {
   if (mimeType.startsWith('image/')) {
     return <ImageIcon className="w-4 h-4 text-chart-2" />;
   }
-  return <FileTextIcon className="w-4 h-4 text-destructive" />;
+  if (mimeType === "application/msword" || mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+    return <FileIcon className="w-4 h-4 text-chart-1" />;
+  }
+  if (mimeType === "application/pdf") {
+    return <FileTextIcon className="w-4 h-4 text-destructive" />;
+  }
+  return <FileIcon className="w-4 h-4 text-gray-500" />; 
 };
 
 const getFileIconBg = (mimeType: string) => {
   if (mimeType.startsWith('image/')) {
     return "bg-chart-2/10";
   }
-  return "bg-destructive/10";
-};
-
-const getCategoryColor = (category: string) => {
-  switch (category) {
-    case 'Business Expense':
-      return 'bg-primary/10 text-primary';
-    case 'Shared Bill':
-      return 'bg-chart-2/10 text-chart-2';
-    case 'Personal Expense':
-      return 'bg-chart-1/10 text-chart-1';
-    case 'Tax Document':
-      return 'bg-chart-4/10 text-chart-4';
-    default:
-      return 'bg-muted text-muted-foreground';
+  if (mimeType === "application/pdf") {
+    return "bg-destructive/10";
   }
-};
+  if (mimeType === "application/msword" || mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+    return "bg-chart-1/10";
+  }
+  return "bg-chart/10";
+}
+
+// const getFileIconBg = (mimeType: string) => {
+//     if (mimeType.startsWith('image/')) {
+//       return "bg-chart-2/10";
+//     }
+//     if(mimeType === "application/pdf") {
+//       return "bg-destructive/10";
+//     }
+//     if(mimeType === "application/msword" || mimeType === "application/vnd.openxmlformats-oficedocument.wordprocessingml.document") {
+//       return "bg-chart-1/10";
+//     }
+//   return "bg-chart/10";
+// };
 
 const formatBytes = (bytes: number) => {
   if (bytes === 0) return '0 B';

@@ -20,8 +20,11 @@ export default function UploadZone({ onFileUpload }: UploadZoneProps) {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'image/*': ['.png', '.jpg', '.jpeg', '.gif'],
-      'application/pdf': ['.pdf']
+      'image/*': ['.png', '.jpg', '.jpeg'],
+      'application/pdf': ['.pdf'],
+      "application/msword" : ['.doc'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : ['docx'],
+      'application/vnd.ms-excel': ['.xls']
     },
     maxFiles: 10,
     maxSize: 10 * 1024 * 1024 // 10MB
@@ -56,7 +59,7 @@ export default function UploadZone({ onFileUpload }: UploadZoneProps) {
           }
         </p>
         <div className="text-xs text-muted-foreground">
-          Supports PNG, JPG, GIF, and PDF files up to 10MB each
+          Supports PNG, JPG, DOC and PDF files up to 10MB each
         </div>
       </div>
     </Card>

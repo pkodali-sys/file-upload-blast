@@ -52,13 +52,17 @@ const upload = multer({
       "image/jpeg",
       "image/gif",
       "application/pdf",
+      "application/msword",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     ];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
       cb(
         new Error(
-          "Invalid file type. Only PNG, JPG, GIF, and PDF files are allowed."
+          "Invalid file type. Only PNG, JPG, DOC and PDF files are allowed."
         )
       );
     }
