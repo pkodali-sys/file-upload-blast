@@ -71,12 +71,12 @@ const upload = multer({
 
 // FTP Configuration
 const FTP_CONFIG = {
-  host: "files.000webhost.com",
-  user: "expense-sync",
-  password: "ExpenseSync2024!",
-  connTimeout: 60000,
-  pasvTimeout: 60000,
-  keepalive: 60000,
+  host: "",
+  user: "",
+  password: "",
+  // connTimeout: 60000,
+  // pasvTimeout: 60000,
+  // keepalive: 60000,
 };
 
 async function uploadToFTP(
@@ -109,7 +109,84 @@ async function uploadToFTP(
   });
 }
 
+// listing all the files from FTP server
+async function listFtpFiles(): Promise<any[]> {
+  return new Promise((resolve) => {
+    const ftp = new FTP();
+    // ready
+    ftp.on("ready", () => {
+      console.log("FTP connection established for file listing");
+      ftp.list("public_html/uploads", (err, list) => {
+        if(err) {
+          console.error("FTP list error:", err);
+          resolve([]);
+        } else {
+          console.log(`Found ${list.length} files on FTP server`);
+          resolve(list || []);
+        }
+        ftp.end();
+      })
+    });
+    // ftp error
+    ftp.on("error", (err) => {
+      console.error("FTP connection error during listing:", err);
+      resolve([]);
+    });
+
+    ftp.connect(FTP_CONFIG);
+  });
+}
+
+// Sync files from ftp server on start up
+async function syncFilesFromFTP() : Promise<void> {
+  try{
+    console.log("Syncing files from ftp server...");
+    const ftpFiles = await listFtpFiles();
+
+    for(const ftpFile of ftpFiles) {
+      if(ftpFile.type !== "-" || ftpFile.name.startsWith(".")) {
+          continue;
+      }
+      // check if file already exists on server
+      const existingFile = files.find(f => f.name === ftpFile.name || f.localPath?.includes(ftpFile.name));
+      if(existingFile) {
+        continue; // skipping if already in memory
+      }
+
+      //extract original filename and reconstruct metadata
+      const filename = ftpFile.name;
+      const originalName = filename.replace(/^\d+-[a-z0-9]+/, '');
+      // remove random timestamp extension
+      const extention = path.extname(filename).toLowerCase();
+
+      if(extention !== ".pdf" ) {
+        continue;
+      }
+
+      // set MIME type for pdf
+      const mimeType = 'application/pdf';
+      // create file metadata
+      const fileData: SimpleFile= {
+        id: randomUUID(),
+        name: originalName.startsWith('.') ? filename : originalName,
+        originalName: originalName.startsWith('.') ? filename : originalName,
+        size: ftpFile.size || 0,
+        mimeType,
+        uploadedAt : ftpFile.date ? new Date(ftpFile.date).toISOString() : new Date().toISOString(),
+        isProcessed: true,
+        localPath: `ftp://${filename}`
+      };
+
+      files.push(fileData);
+    }
+    console.log(`Synced ${ftpFiles.length} files from FTP. Total files in memory: ${files.length}`)
+  } catch (err) {
+    console.error("Error syncing files from FTP", err)
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
+  await syncFilesFromFTP();
   // File upload endpoint
   app.post("/api/files/upload", upload.array("files", 10), async (req, res) => {
     try {
@@ -230,6 +307,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!file || !file.localPath) {
         return res.status(404).json({ message: "File not found" });
       }
+
+      // handle FTP only files
+      if(file.localPath.startsWith("ftp://")) {
+        const fileName = file.localPath.replace("ftp://", "");
+        const ftpFileUrl = `https://${FTP_CONFIG.host.replace('files.', '')}/uploads/${fileName}`;
+        return res.redirect(ftpFileUrl);
+      }
+      
 
       // Check if file exists locally
       if (!fs.existsSync(file.localPath)) {
