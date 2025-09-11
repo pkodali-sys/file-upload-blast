@@ -36,7 +36,6 @@ const upload = multer({
       cb(null, uploadsDir);
     },
     filename: (req, file, cb) => {
-      // Generate unique filename with timestamp and random string
       const timestamp = Date.now();
       const randomString = Math.random().toString(36).substring(2, 15);
       const extension = path.extname(file.originalname);
@@ -60,23 +59,17 @@ const upload = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(
-        new Error(
-          "Invalid file type. Only PNG, JPG, DOC and PDF files are allowed."
-        )
-      );
+      cb(new Error("Invalid file type. Only PNG, JPG, DOC, XLS, and PDF allowed."));
     }
   },
 });
 
 // FTP Configuration
 const FTP_CONFIG = {
-  host: "",
-  user: "",
-  password: "",
-  // connTimeout: 60000,
-  // pasvTimeout: 60000,
-  // keepalive: 60000,
+  host: "172.24.29.4",
+  user: "ftp_bot",
+  password: "test@123",
+  port: 21,
 };
 
 // Create uploads directory on FTP server
@@ -85,58 +78,20 @@ async function createFTPUploadsDir(): Promise<boolean> {
     const ftp = new FTP();
 
     ftp.on("ready", () => {
-      console.log("FTP connection established for directory creation");
-
-      // First check if public_html exists
-      ftp.list("public_html", (err, list) => {
-        if (err) {
-          console.log("public_html directory not found, creating it...");
-          ftp.mkdir("public_html", (mkdirErr) => {
-            if (mkdirErr) {
-              console.error("Failed to create public_html:", mkdirErr);
-              ftp.end();
-              resolve(false);
-              return;
-            }
-
-            // Now create uploads directory
-            ftp.mkdir("public_html/uploads", (uploadsErr) => {
-              if (uploadsErr) {
-                console.error(
-                  "Failed to create uploads directory:",
-                  uploadsErr
-                );
-                resolve(false);
-              } else {
-                console.log(
-                  "Successfully created public_html/uploads directory"
-                );
-                resolve(true);
-              }
-              ftp.end();
-            });
-          });
+      ftp.mkdir("public_html/uploads", true, (err) => {
+        if (err && (err as any).code !== 550) {
+          console.error("Failed to create uploads dir:", err);
+          resolve(false);
         } else {
-          // public_html exists, now check/create uploads
-          ftp.mkdir("public_html/uploads", (uploadsErr) => {
-            if (uploadsErr && (uploadsErr as any).code !== 550) {
-              // 550 means directory already exists, which is fine
-              console.error("Failed to create uploads directory:", uploadsErr);
-              resolve(false);
-            } else {
-              console.log(
-                "Uploads directory ready (created or already exists)"
-              );
-              resolve(true);
-            }
-            ftp.end();
-          });
+          console.log("Uploads directory ready (created or already exists)");
+          resolve(true);
         }
+        ftp.end();
       });
     });
 
     ftp.on("error", (err) => {
-      console.error("FTP connection error during directory creation:", err);
+      console.error("FTP connection error:", err);
       resolve(false);
     });
 
@@ -144,21 +99,13 @@ async function createFTPUploadsDir(): Promise<boolean> {
   });
 }
 
-async function uploadToFTP(
-  localFilePath: string,
-  fileName: string
-): Promise<boolean> {
-  // First ensure uploads directory exists
-  const dirCreated = await createFTPUploadsDir();
-  if (!dirCreated) {
-    console.error("Warning: Could not verify uploads directory exists");
-  }
-
+// Upload file to FTP
+async function uploadToFTP(localFilePath: string, fileName: string): Promise<boolean> {
+  await createFTPUploadsDir();
   return new Promise((resolve) => {
     const ftp = new FTP();
 
     ftp.on("ready", () => {
-      console.log("FTP connection established");
       ftp.put(localFilePath, `public_html/uploads/${fileName}`, (err) => {
         if (err) {
           console.error("FTP upload error:", err);
@@ -180,100 +127,80 @@ async function uploadToFTP(
   });
 }
 
-// listing all the files from FTP server
+// List FTP files
 async function listFtpFiles(): Promise<any[]> {
   return new Promise((resolve) => {
     const ftp = new FTP();
-    // ready
     ftp.on("ready", () => {
-      console.log("FTP connection established for file listing");
       ftp.list("public_html/uploads", (err, list) => {
         if (err) {
           console.error("FTP list error:", err);
           resolve([]);
         } else {
-          console.log(`Found ${list.length} files on FTP server`);
           resolve(list || []);
         }
         ftp.end();
       });
     });
-    // ftp error
     ftp.on("error", (err) => {
-      console.error("FTP connection error during listing:", err);
+      console.error("FTP error during list:", err);
       resolve([]);
     });
-
     ftp.connect(FTP_CONFIG);
   });
 }
 
-// Sync files from ftp server on start up
+// Sync files from FTP server
 async function syncFilesFromFTP(): Promise<void> {
   try {
-    console.log("Syncing files from FTP server...");
-
-    // First ensure the uploads directory exists
-    console.log("Creating uploads directory if it doesn't exist...");
-    const dirCreated = await createFTPUploadsDir();
-    if (!dirCreated) {
-      console.error(
-        "Could not create/verify uploads directory, but continuing anyway..."
-      );
-    }
+    console.log("Syncing files from FTP...");
+    await createFTPUploadsDir();
     const ftpFiles = await listFtpFiles();
 
     for (const ftpFile of ftpFiles) {
-      if (ftpFile.type !== "-" || ftpFile.name.startsWith(".")) {
-        continue;
-      }
-      // check if file already exists on server
-      const existingFile = files.find(
-        (f) => f.name === ftpFile.name || f.localPath?.includes(ftpFile.name)
-      );
-      if (existingFile) {
-        continue; // skipping if already in memory
-      }
+      if (ftpFile.type !== "-" || ftpFile.name.startsWith(".")) continue;
 
-      //extract original filename and reconstruct metadata
       const filename = ftpFile.name;
-      const originalName = filename.replace(/^\d+-[a-z0-9]+/, "");
-      // remove random timestamp extension
-      const extention = path.extname(filename).toLowerCase();
-
-      if (extention !== ".pdf") {
+      const ext = path.extname(filename).toLowerCase();
+      if (![".pdf", ".png", ".jpg", ".jpeg", ".gif", ".doc", ".docx", ".xls", ".xlsx"].includes(ext)) {
         continue;
       }
 
-      // set MIME type for pdf
-      const mimeType = "application/pdf";
-      // create file metadata
-      const fileData: SimpleFile = {
+      if (files.find((f) => f.name === filename)) continue;
+
+      files.push({
         id: randomUUID(),
-        name: originalName.startsWith(".") ? filename : originalName,
-        originalName: originalName.startsWith(".") ? filename : originalName,
+        name: filename,
+        originalName: filename,
         size: ftpFile.size || 0,
-        mimeType,
-        uploadedAt: ftpFile.date
-          ? new Date(ftpFile.date).toISOString()
-          : new Date().toISOString(),
+        mimeType: ext === ".pdf" ? "application/pdf" : "application/octet-stream",
+        uploadedAt: ftpFile.date ? new Date(ftpFile.date).toISOString() : new Date().toISOString(),
         isProcessed: true,
         localPath: `ftp://${filename}`,
-      };
-
-      files.push(fileData);
+      });
     }
-    console.log(
-      `Synced ${ftpFiles.length} files from FTP. Total files in memory: ${files.length}`
-    );
+    console.log(`Synced ${files.length} files from FTP.`);
   } catch (err) {
-    console.error("Error syncing files from FTP", err);
+    console.error("Error syncing FTP:", err);
   }
+}
+
+// Sanitize filenames
+function sanitizeFilename(filename: string): string {
+  let sanitized = filename.replace(/[\/\\:*?"<>|]/g, "");
+  sanitized = sanitized.replace(/\s+/g, "_").replace(/_+/g, "_");
+  const ext = path.extname(sanitized);
+  const base = sanitized.slice(0, -ext.length);
+  if (base.length > 80) {
+    sanitized = base.slice(0, 80) + ext;
+  }
+  return sanitized;
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
   await syncFilesFromFTP();
-  // File upload endpoint
+
+  // Upload endpoint
   app.post("/api/files/upload", upload.array("files", 10), async (req, res) => {
     try {
       const uploadedFiles = req.files as Express.Multer.File[];
@@ -281,180 +208,141 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No files uploaded" });
       }
 
-      const processedFiles = [];
+      const processedFiles: SimpleFile[] = [];
 
       for (const file of uploadedFiles) {
-        // Upload to FTP server (async, don't wait for completion)
-        const ftpUploadPromise = uploadToFTP(file.path, file.filename);
+        const sanitizedOriginal = sanitizeFilename(file.originalname);
+        const ftpFileName = `${file.filename.replace(path.extname(file.filename), "")}-${sanitizedOriginal}`;
+
+        // async upload to FTP
+        uploadToFTP(file.path, ftpFileName).then((ftpSuccess) => {
+          console.log(`File ${file.originalname} - Local: ✓ FTP: ${ftpSuccess ? "✓" : "✗"}`);
+        });
 
         const fileData: SimpleFile = {
           id: randomUUID(),
-          name: file.originalname,
+          name: sanitizedOriginal,
           originalName: file.originalname,
           size: file.size,
           mimeType: file.mimetype,
-
           uploadedAt: new Date().toISOString(),
           isProcessed: true,
           localPath: file.path,
         };
 
         files.push(fileData);
-
-        // Try FTP upload and update status
-        ftpUploadPromise.then((ftpSuccess) => {
-          console.log(
-            `File ${file.originalname} - Local: ✓ FTP: ${
-              ftpSuccess ? "✓" : "✗"
-            }`
-          );
-        });
-
         processedFiles.push(fileData);
       }
 
       res.json({ files: processedFiles });
     } catch (error) {
-      console.error("File upload error:", error);
-      res.status(500).json({ message: "Failed to upload files" });
+      console.error("Upload error:", error);
+      res.status(500).json({ message: "Upload failed" });
     }
   });
 
-  // Get files with pagination and search
+  // List files
   app.get("/api/files", async (req, res) => {
     try {
-      const {
-        page = "1",
-        limit = "10",
-        search,
-        category,
-      } = req.query as Record<string, string>;
+      const { page = "1", limit = "10", search } = req.query as Record<string, string>;
+      let filtered = [...files];
 
-      let filteredFiles = [...files];
-
-      // Apply filters
       if (search) {
-        const searchTerm = search.toLowerCase();
-        filteredFiles = filteredFiles.filter(
-          (file) =>
-            file.name.toLowerCase().includes(searchTerm) ||
-            file.originalName.toLowerCase().includes(searchTerm)
+        const term = search.toLowerCase();
+        filtered = filtered.filter(
+          (f) => f.name.toLowerCase().includes(term) || f.originalName.toLowerCase().includes(term)
         );
       }
 
-      // Sort by upload date (newest first)
-      filteredFiles.sort(
-        (a, b) =>
-          new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
-      );
+      filtered.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
 
-      const total = filteredFiles.length;
+      const total = filtered.length;
       const offset = (parseInt(page) - 1) * parseInt(limit);
-      const paginatedFiles = filteredFiles.slice(
-        offset,
-        offset + parseInt(limit)
-      );
+      const paginated = filtered.slice(offset, offset + parseInt(limit));
 
-      res.json({
-        files: paginatedFiles,
-        total,
-        page: parseInt(page),
-        totalPages: Math.ceil(total / parseInt(limit)),
-      });
+      res.json({ files: paginated, total, page: parseInt(page), totalPages: Math.ceil(total / parseInt(limit)) });
     } catch (error) {
-      console.error("Get files error:", error);
-      res.status(500).json({ message: "Failed to fetch files" });
+      console.error("List error:", error);
+      res.status(500).json({ message: "Failed to list files" });
     }
   });
 
   // Get single file
-  app.get("/api/files/:id", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const file = files.find((f) => f.id === id);
-
-      if (!file) {
-        return res.status(404).json({ message: "File not found" });
-      }
-
-      res.json({ file });
-    } catch (error) {
-      console.error("Get file error:", error);
-      res.status(500).json({ message: "Failed to fetch file" });
-    }
+  app.get("/api/files/:id", (req, res) => {
+    const file = files.find((f) => f.id === req.params.id);
+    if (!file) return res.status(404).json({ message: "File not found" });
+    res.json({ file });
   });
 
-  // View file
-  app.get("/api/files/:id/view", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const file = files.find((f) => f.id === id);
+  // View file (FTP streaming fix)
+  app.get("/api/files/:id/view", (req, res) => {
+    const file = files.find((f) => f.id === req.params.id);
+    if (!file || !file.localPath) return res.status(404).json({ message: "File not found" });
 
-      if (!file || !file.localPath) {
-        return res.status(404).json({ message: "File not found" });
-      }
+    // If on FTP → stream
+    if (file.localPath.startsWith("ftp://")) {
+      const fileName = file.localPath.replace("ftp://", "");
+      const ftp = new FTP();
 
-      // handle FTP only files
-      if (file.localPath.startsWith("ftp://")) {
-        const fileName = file.localPath.replace("ftp://", "");
-        const ftpFileUrl = `https://${FTP_CONFIG.host.replace(
-          "files.",
-          ""
-        )}/uploads/${fileName}`;
-        return res.redirect(ftpFileUrl);
-      }
+      ftp.on("ready", () => {
+        ftp.get(`public_html/uploads/${fileName}`, (err, stream) => {
+          if (err || !stream) {
+            console.error("FTP stream error:", err);
+            res.status(500).json({ message: "Failed to fetch file from FTP" });
+            ftp.end();
+            return;
+          }
 
-      // Check if file exists locally
-      if (!fs.existsSync(file.localPath)) {
-        return res.status(404).json({ message: "File not found on disk" });
-      }
+          res.set({
+            "Content-Type": file.mimeType,
+            "Content-Disposition": `inline; filename="${file.originalName}"`,
+          });
 
-      // Set appropriate headers
-      res.set({
-        "Content-Type": file.mimeType,
-        "Content-Disposition": `inline; filename="${file.originalName}"`,
+          stream.pipe(res);
+          stream.on("close", () => ftp.end());
+        });
       });
 
-      // Stream the file
-      const fileStream = fs.createReadStream(file.localPath);
-      fileStream.pipe(res);
-    } catch (error) {
-      console.error("File serve error:", error);
-      res.status(500).json({ message: "Failed to serve file" });
+      ftp.on("error", (err) => {
+        console.error("FTP connection error:", err);
+        res.status(500).json({ message: "FTP connection failed" });
+      });
+
+      ftp.connect(FTP_CONFIG);
+      return;
     }
+
+    // Local disk
+    if (!fs.existsSync(file.localPath)) {
+      return res.status(404).json({ message: "File not found on disk" });
+    }
+
+    res.set({
+      "Content-Type": file.mimeType,
+      "Content-Disposition": `inline; filename="${file.originalName}"`,
+    });
+
+    fs.createReadStream(file.localPath).pipe(res);
   });
 
-  // Delete file
-  app.delete("/api/files/:id", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const fileIndex = files.findIndex((f) => f.id === id);
+  // Delete file (local only for now)
+  app.delete("/api/files/:id", (req, res) => {
+    const idx = files.findIndex((f) => f.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ message: "File not found" });
 
-      if (fileIndex === -1) {
-        return res.status(404).json({ message: "File not found" });
+    const file = files[idx];
+    files.splice(idx, 1);
+
+    if (file.localPath && fs.existsSync(file.localPath)) {
+      try {
+        fs.unlinkSync(file.localPath);
+        console.log(`Local file deleted: ${file.localPath}`);
+      } catch (err) {
+        console.error("Failed to delete local file:", err);
       }
-
-      const file = files[fileIndex];
-
-      // Remove from in-memory storage
-      files.splice(fileIndex, 1);
-
-      // Optionally delete the local file from disk
-      if (file.localPath && fs.existsSync(file.localPath)) {
-        try {
-          fs.unlinkSync(file.localPath);
-          console.log(`Local file deleted: ${file.localPath}`);
-        } catch (error) {
-          console.error("Failed to delete local file:", error);
-          // Continue anyway since we removed it from memory
-        }
-      }
-
-      res.json({ message: "File deleted successfully" });
-    } catch (error) {
-      console.error("Delete file error:", error);
-      res.status(500).json({ message: "Failed to delete file" });
     }
+
+    res.json({ message: "File deleted" });
   });
 
   const httpServer = createServer(app);
