@@ -55,7 +55,7 @@ const upload = multer({
       "application/msword",
       "application/vnd.ms-excel",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
@@ -79,10 +79,81 @@ const FTP_CONFIG = {
   // keepalive: 60000,
 };
 
+// Create uploads directory on FTP server
+async function createFTPUploadsDir(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const ftp = new FTP();
+
+    ftp.on("ready", () => {
+      console.log("FTP connection established for directory creation");
+
+      // First check if public_html exists
+      ftp.list("public_html", (err, list) => {
+        if (err) {
+          console.log("public_html directory not found, creating it...");
+          ftp.mkdir("public_html", (mkdirErr) => {
+            if (mkdirErr) {
+              console.error("Failed to create public_html:", mkdirErr);
+              ftp.end();
+              resolve(false);
+              return;
+            }
+
+            // Now create uploads directory
+            ftp.mkdir("public_html/uploads", (uploadsErr) => {
+              if (uploadsErr) {
+                console.error(
+                  "Failed to create uploads directory:",
+                  uploadsErr
+                );
+                resolve(false);
+              } else {
+                console.log(
+                  "Successfully created public_html/uploads directory"
+                );
+                resolve(true);
+              }
+              ftp.end();
+            });
+          });
+        } else {
+          // public_html exists, now check/create uploads
+          ftp.mkdir("public_html/uploads", (uploadsErr) => {
+            if (uploadsErr && (uploadsErr as any).code !== 550) {
+              // 550 means directory already exists, which is fine
+              console.error("Failed to create uploads directory:", uploadsErr);
+              resolve(false);
+            } else {
+              console.log(
+                "Uploads directory ready (created or already exists)"
+              );
+              resolve(true);
+            }
+            ftp.end();
+          });
+        }
+      });
+    });
+
+    ftp.on("error", (err) => {
+      console.error("FTP connection error during directory creation:", err);
+      resolve(false);
+    });
+
+    ftp.connect(FTP_CONFIG);
+  });
+}
+
 async function uploadToFTP(
   localFilePath: string,
   fileName: string
 ): Promise<boolean> {
+  // First ensure uploads directory exists
+  const dirCreated = await createFTPUploadsDir();
+  if (!dirCreated) {
+    console.error("Warning: Could not verify uploads directory exists");
+  }
+
   return new Promise((resolve) => {
     const ftp = new FTP();
 
@@ -117,7 +188,7 @@ async function listFtpFiles(): Promise<any[]> {
     ftp.on("ready", () => {
       console.log("FTP connection established for file listing");
       ftp.list("public_html/uploads", (err, list) => {
-        if(err) {
+        if (err) {
           console.error("FTP list error:", err);
           resolve([]);
         } else {
@@ -125,7 +196,7 @@ async function listFtpFiles(): Promise<any[]> {
           resolve(list || []);
         }
         ftp.end();
-      })
+      });
     });
     // ftp error
     ftp.on("error", (err) => {
@@ -138,50 +209,65 @@ async function listFtpFiles(): Promise<any[]> {
 }
 
 // Sync files from ftp server on start up
-async function syncFilesFromFTP() : Promise<void> {
-  try{
-    console.log("Syncing files from ftp server...");
+async function syncFilesFromFTP(): Promise<void> {
+  try {
+    console.log("Syncing files from FTP server...");
+
+    // First ensure the uploads directory exists
+    console.log("Creating uploads directory if it doesn't exist...");
+    const dirCreated = await createFTPUploadsDir();
+    if (!dirCreated) {
+      console.error(
+        "Could not create/verify uploads directory, but continuing anyway..."
+      );
+    }
     const ftpFiles = await listFtpFiles();
 
-    for(const ftpFile of ftpFiles) {
-      if(ftpFile.type !== "-" || ftpFile.name.startsWith(".")) {
-          continue;
+    for (const ftpFile of ftpFiles) {
+      if (ftpFile.type !== "-" || ftpFile.name.startsWith(".")) {
+        continue;
       }
       // check if file already exists on server
-      const existingFile = files.find(f => f.name === ftpFile.name || f.localPath?.includes(ftpFile.name));
-      if(existingFile) {
+      const existingFile = files.find(
+        (f) => f.name === ftpFile.name || f.localPath?.includes(ftpFile.name)
+      );
+      if (existingFile) {
         continue; // skipping if already in memory
       }
 
       //extract original filename and reconstruct metadata
       const filename = ftpFile.name;
-      const originalName = filename.replace(/^\d+-[a-z0-9]+/, '');
+      const originalName = filename.replace(/^\d+-[a-z0-9]+/, "");
       // remove random timestamp extension
       const extention = path.extname(filename).toLowerCase();
 
-      if(extention !== ".pdf" ) {
+      if (extention !== ".pdf") {
         continue;
       }
 
       // set MIME type for pdf
-      const mimeType = 'application/pdf';
+      const mimeType = "application/pdf";
       // create file metadata
-      const fileData: SimpleFile= {
+      const fileData: SimpleFile = {
         id: randomUUID(),
-        name: originalName.startsWith('.') ? filename : originalName,
-        originalName: originalName.startsWith('.') ? filename : originalName,
+        name: originalName.startsWith(".") ? filename : originalName,
+        originalName: originalName.startsWith(".") ? filename : originalName,
         size: ftpFile.size || 0,
         mimeType,
-        uploadedAt : ftpFile.date ? new Date(ftpFile.date).toISOString() : new Date().toISOString(),
+        uploadedAt: ftpFile.date
+          ? new Date(ftpFile.date).toISOString()
+          : new Date().toISOString(),
         isProcessed: true,
-        localPath: `ftp://${filename}`
+        localPath: `ftp://${filename}`,
       };
 
       files.push(fileData);
     }
-    console.log(`Synced ${ftpFiles.length} files from FTP. Total files in memory: ${files.length}`)
+    console.log(
+      `Synced ${ftpFiles.length} files from FTP. Total files in memory: ${files.length}`
+    );
   } catch (err) {
-    console.error("Error syncing files from FTP", err)
+    console.error("Error syncing files from FTP", err);
   }
 }
 
@@ -309,12 +395,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // handle FTP only files
-      if(file.localPath.startsWith("ftp://")) {
+      if (file.localPath.startsWith("ftp://")) {
         const fileName = file.localPath.replace("ftp://", "");
-        const ftpFileUrl = `https://${FTP_CONFIG.host.replace('files.', '')}/uploads/${fileName}`;
+        const ftpFileUrl = `https://${FTP_CONFIG.host.replace(
+          "files.",
+          ""
+        )}/uploads/${fileName}`;
         return res.redirect(ftpFileUrl);
       }
-      
 
       // Check if file exists locally
       if (!fs.existsSync(file.localPath)) {
