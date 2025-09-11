@@ -34,7 +34,7 @@ export default function Navbar() {
                   "px-4 py-2 rounded-md text-sm font-medium transition-all duration-200",
                   isUploadActive
                     ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-stone-300"
                 )}
                 data-testid="button-tab-upload"
               >
@@ -48,7 +48,7 @@ export default function Navbar() {
                   "px-4 py-2 rounded-md text-sm font-medium transition-all duration-200",
                   isFilesActive
                     ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-stone-300"
                 )}
                 data-testid="button-tab-files"
               >
