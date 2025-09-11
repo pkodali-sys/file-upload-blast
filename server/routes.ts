@@ -212,7 +212,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       for (const file of uploadedFiles) {
         const sanitizedOriginal = sanitizeFilename(file.originalname);
-        const ftpFileName = `${file.filename.replace(path.extname(file.filename), "")}-${sanitizedOriginal}`;
+        const ftpFileName = `${sanitizedOriginal}`;
 
         // async upload to FTP
         uploadToFTP(file.path, ftpFileName).then((ftpSuccess) => {
@@ -326,24 +326,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete file (local only for now)
-  app.delete("/api/files/:id", (req, res) => {
-    const idx = files.findIndex((f) => f.id === req.params.id);
-    if (idx === -1) return res.status(404).json({ message: "File not found" });
+  // app.delete("/api/files/:id", (req, res) => {
+  //   const idx = files.findIndex((f) => f.id === req.params.id);
+  //   if (idx === -1) return res.status(404).json({ message: "File not found" });
 
-    const file = files[idx];
-    files.splice(idx, 1);
+  //   const file = files[idx];
+  //   files.splice(idx, 1);
 
-    if (file.localPath && fs.existsSync(file.localPath)) {
-      try {
-        fs.unlinkSync(file.localPath);
-        console.log(`Local file deleted: ${file.localPath}`);
-      } catch (err) {
-        console.error("Failed to delete local file:", err);
-      }
+  //   if (file.localPath && fs.existsSync(file.localPath)) {
+  //     try {
+  //       fs.unlinkSync(file.localPath);
+  //       console.log(`Local file deleted: ${file.localPath}`);
+  //     } catch (err) {
+  //       console.error("Failed to delete local file:", err);
+  //     }
+  //   }
+
+  //   res.json({ message: "File deleted" });
+  // });
+  // Delete file (local + FTP)
+app.delete("/api/files/:id", (req, res) => {
+  const idx = files.findIndex((f) => f.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ message: "File not found" });
+
+  const file = files[idx];
+  files.splice(idx, 1);
+
+  // Delete from local disk
+  if (file.localPath && fs.existsSync(file.localPath) && !file.localPath.startsWith("ftp://")) {
+    try {
+      fs.unlinkSync(file.localPath);
+      console.log(`Local file deleted: ${file.localPath}`);
+    } catch (err) {
+      console.error("Failed to delete local file:", err);
     }
+  }
 
-    res.json({ message: "File deleted" });
-  });
+  // Delete from FTP if stored there
+  if (file.localPath && file.localPath.startsWith("ftp://")) {
+    const fileName = file.localPath.replace("ftp://", "");
+    const ftp = new FTP();
+
+    ftp.on("ready", () => {
+      ftp.delete(`public_html/uploads/${fileName}`, (err) => {
+        if (err) {
+          console.error("Failed to delete file from FTP:", err);
+        } else {
+          console.log(`File deleted from FTP: ${fileName}`);
+        }
+        ftp.end();
+      });
+    });
+
+    ftp.on("error", (err) => {
+      console.error("FTP delete connection error:", err);
+    });
+
+    ftp.connect(FTP_CONFIG);
+  }
+
+  res.json({ message: "File deleted successfully" });
+});
+
 
   const httpServer = createServer(app);
   return httpServer;
