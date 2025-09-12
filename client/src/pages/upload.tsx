@@ -111,7 +111,7 @@ export default function Upload() {
             Upload Files
           </h1>
           <p className="text-muted-foreground">
-            Upload a single or multiple files (PNG, JPG, DOC, PDF) up to 10MB each.
+            Upload a single or multiple PDF files up to 10MB each.
           </p>
         </div>
 

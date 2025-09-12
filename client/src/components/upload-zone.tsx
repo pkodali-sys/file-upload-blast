@@ -59,7 +59,7 @@ export default function UploadZone({ onFileUpload }: UploadZoneProps) {
           }
         </p>
         <div className="text-xs text-muted-foreground">
-          Supports PNG, JPG, DOC and PDF files up to 10MB each
+          Supports PDF files up to 10MB each
         </div>
       </div>
     </Card>

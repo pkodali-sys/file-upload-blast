@@ -269,24 +269,24 @@ export default function FilesTable({
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center space-x-2">
                     <Button 
-                      variant="ghost" 
+                      variant="default" 
                       size="sm"
                       onClick={() => handleCopyLink(file.id)}
-                      className="p-1 text-muted-foreground hover:text-primary transition-colors"
+                      className="p-3 text-white  rounded transition-colors duration-200  hover:scale-105"
                       data-testid={`button-copy-link-${file.id}`}
                     >
-                      <LinkIcon className="w-4 h-4" />
+                      Copy Link
                     </Button>
 
                     <Button 
-                      variant="ghost" 
+                      variant="destructive" 
                       size="sm"
                       onClick={() => handleDelete(file.id)}
                       disabled={deleteMutation.isPending}
-                      className="p-1 text-muted-foreground hover:text-destructive transition-colors"
+                      className="p-3 text-white  rounded transition-colors duration-200  hover:scale-105"
                       data-testid={`button-delete-${file.id}`}
                     >
-                      <TrashIcon className="w-4 h-4" />
+                      Delete
                     </Button>
                   </div>
                 </td>
