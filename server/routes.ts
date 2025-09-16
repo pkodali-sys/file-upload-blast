@@ -21,7 +21,7 @@ interface SimpleFile {
   uploadedAt: string;
   isProcessed: boolean;
   localPath: string;
-  ftpPath?: string; // NEW: track FTP remote path
+  ftpPath?: string;
 }
 
 const files: SimpleFile[] = [];
@@ -44,7 +44,7 @@ const upload = multer({
     },
   }),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 10 * 1024 * 1024, // 10MB
   },
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
@@ -57,11 +57,8 @@ const upload = multer({
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Invalid file type. Only PNG, JPG, DOC, XLS, and PDF allowed."));
-    }
+    if (allowedTypes.includes(file.mimetype)) cb(null, true);
+    else cb(new Error("Invalid file type. Only PNG, JPG, DOC, XLS, and PDF allowed."));
   },
 });
 
@@ -70,35 +67,50 @@ const FTP_CONFIG = {
   host: "172.24.29.4",
   user: "ftp_bot",
   password: "test@123",
-  // host: process.env.FTP_HOST,
-  // user: process.env.FTP_USER,
-  // password: process.env.FTP_PASS,
   port: 21,
 };
 
-// Create uploads directory on FTP server
+// Check FTP connection
+async function checkFTPConnection(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const ftp = new FTP();
+    let connected = false;
+
+    ftp.on("ready", () => {
+      connected = true;
+      console.log("FTP connection successful");
+      ftp.end();
+      resolve(true);
+    });
+
+    ftp.on("error", (err) => {
+      if (!connected) {
+        console.error("FTP connection failed:", err);
+        resolve(false);
+      }
+    });
+
+    ftp.connect(FTP_CONFIG);
+  });
+}
+
+// Ensure uploads directory exists on FTP
 async function createFTPUploadsDir(): Promise<boolean> {
   return new Promise((resolve) => {
     const ftp = new FTP();
-
     ftp.on("ready", () => {
       ftp.mkdir("public_html/uploads", true, (err) => {
         if (err && (err as any).code !== 550) {
-          console.error("Failed to create uploads dir:", err);
+          console.error("Failed to create FTP dir:", err);
           resolve(false);
-        } else {
-          console.log("Uploads directory ready (created or already exists)");
-          resolve(true);
-        }
+        } else resolve(true);
         ftp.end();
       });
     });
-
     ftp.on("error", (err) => {
       console.error("FTP connection error:", err);
       resolve(false);
     });
-
     ftp.connect(FTP_CONFIG);
   });
 }
@@ -108,7 +120,6 @@ async function uploadToFTP(localFilePath: string, fileName: string): Promise<boo
   await createFTPUploadsDir();
   return new Promise((resolve) => {
     const ftp = new FTP();
-
     ftp.on("ready", () => {
       ftp.put(localFilePath, `public_html/uploads/${fileName}`, (err) => {
         if (err) {
@@ -121,12 +132,10 @@ async function uploadToFTP(localFilePath: string, fileName: string): Promise<boo
         ftp.end();
       });
     });
-
     ftp.on("error", (err) => {
       console.error("FTP connection error:", err);
       resolve(false);
     });
-
     ftp.connect(FTP_CONFIG);
   });
 }
@@ -140,9 +149,7 @@ async function listFtpFiles(): Promise<any[]> {
         if (err) {
           console.error("FTP list error:", err);
           resolve([]);
-        } else {
-          resolve(list || []);
-        }
+        } else resolve(list || []);
         ftp.end();
       });
     });
@@ -158,6 +165,12 @@ async function listFtpFiles(): Promise<any[]> {
 async function syncFilesFromFTP(): Promise<void> {
   try {
     console.log("Syncing files from FTP...");
+    const isConnected = await checkFTPConnection();
+    if (!isConnected) {
+      console.warn("FTP server unreachable. Skipping sync.");
+      return;
+    }
+
     await createFTPUploadsDir();
     const ftpFiles = await listFtpFiles();
 
@@ -166,10 +179,7 @@ async function syncFilesFromFTP(): Promise<void> {
 
       const filename = ftpFile.name;
       const ext = path.extname(filename).toLowerCase();
-      if (![".pdf", ".png", ".jpg", ".jpeg", ".gif", ".doc", ".docx", ".xls", ".xlsx"].includes(ext)) {
-        continue;
-      }
-
+      if (![".pdf", ".png", ".jpg", ".jpeg", ".gif", ".doc", ".docx", ".xls", ".xlsx"].includes(ext)) continue;
       if (files.find((f) => f.name === filename)) continue;
 
       files.push({
@@ -181,7 +191,7 @@ async function syncFilesFromFTP(): Promise<void> {
         uploadedAt: ftpFile.date ? new Date(ftpFile.date).toISOString() : new Date().toISOString(),
         isProcessed: true,
         localPath: `ftp://${filename}`,
-        ftpPath: `public_html/uploads/${filename}`, // NEW
+        ftpPath: `public_html/uploads/${filename}`,
       });
     }
     console.log(`Synced ${files.length} files from FTP.`);
@@ -196,22 +206,29 @@ function sanitizeFilename(filename: string): string {
   sanitized = sanitized.replace(/\s+/g, "_").replace(/_+/g, "_");
   const ext = path.extname(sanitized);
   const base = sanitized.slice(0, -ext.length);
-  if (base.length > 80) {
-    sanitized = base.slice(0, 80) + ext;
-  }
+  if (base.length > 80) sanitized = base.slice(0, 80) + ext;
   return sanitized;
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
   await syncFilesFromFTP();
 
+  // FTP connection check endpoint
+  app.get("/api/ftp/check", async (req, res) => {
+    try {
+      const isConnected = await checkFTPConnection();
+      res.json({ connected: isConnected });
+    } catch (err) {
+      console.error("FTP check error:", err);
+      res.status(500).json({ connected: false, message: "FTP check failed" });
+    }
+  });
+
   // Upload endpoint
   app.post("/api/files/upload", upload.array("files", 10), async (req, res) => {
     try {
       const uploadedFiles = req.files as Express.Multer.File[];
-      if (!uploadedFiles || uploadedFiles.length === 0) {
-        return res.status(400).json({ message: "No files uploaded" });
-      }
+      if (!uploadedFiles || uploadedFiles.length === 0) return res.status(400).json({ message: "No files uploaded" });
 
       const processedFiles: SimpleFile[] = [];
 
@@ -219,10 +236,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const sanitizedOriginal = sanitizeFilename(file.originalname);
         const ftpFileName = `${sanitizedOriginal}`;
 
-        // async upload to FTP
-        uploadToFTP(file.path, ftpFileName).then((ftpSuccess) => {
-          console.log(`File ${file.originalname} - Local: ✓ FTP: ${ftpSuccess ? "✓" : "✗"}`);
-        });
+        const ftpSuccess = await uploadToFTP(file.path, ftpFileName);
+        console.log(`File ${file.originalname} - Local: ✓ FTP: ${ftpSuccess ? "✓" : "✗"}`);
 
         const fileData: SimpleFile = {
           id: randomUUID(),
@@ -233,7 +248,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           uploadedAt: new Date().toISOString(),
           isProcessed: true,
           localPath: file.path,
-          ftpPath: `public_html/uploads/${ftpFileName}`, // NEW
+          ftpPath: `public_html/uploads/${ftpFileName}`,
         };
 
         files.push(fileData);
@@ -247,25 +262,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // List files
+  // List files endpoint
   app.get("/api/files", async (req, res) => {
     try {
       const { page = "1", limit = "10", search } = req.query as Record<string, string>;
       let filtered = [...files];
-
       if (search) {
         const term = search.toLowerCase();
-        filtered = filtered.filter(
-          (f) => f.name.toLowerCase().includes(term) || f.originalName.toLowerCase().includes(term)
-        );
+        filtered = filtered.filter((f) => f.name.toLowerCase().includes(term) || f.originalName.toLowerCase().includes(term));
       }
-
       filtered.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
-
       const total = filtered.length;
       const offset = (parseInt(page) - 1) * parseInt(limit);
       const paginated = filtered.slice(offset, offset + parseInt(limit));
-
       res.json({ files: paginated, total, page: parseInt(page), totalPages: Math.ceil(total / parseInt(limit)) });
     } catch (error) {
       console.error("List error:", error);
@@ -280,15 +289,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ file });
   });
 
-  // View file (FTP streaming fix)
+  // View file
   app.get("/api/files/:id/view", (req, res) => {
     const file = files.find((f) => f.id === req.params.id);
-    if (!file || !file.localPath) return res.status(404).json({ message: "File not found" });
+    if (!file) return res.status(404).json({ message: "File not found" });
 
-    // If on FTP → stream
     if (file.ftpPath) {
       const ftp = new FTP();
-
       ftp.on("ready", () => {
         ftp.get(file.ftpPath!, (err, stream) => {
           if (err || !stream) {
@@ -297,40 +304,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ftp.end();
             return;
           }
-
           res.set({
             "Content-Type": file.mimeType,
             "Content-Disposition": `inline; filename="${file.originalName}"`,
           });
-
           stream.pipe(res);
           stream.on("close", () => ftp.end());
         });
       });
-
       ftp.on("error", (err) => {
         console.error("FTP connection error:", err);
         res.status(500).json({ message: "FTP connection failed" });
       });
-
       ftp.connect(FTP_CONFIG);
       return;
     }
 
-    // Local disk
-    if (!fs.existsSync(file.localPath)) {
-      return res.status(404).json({ message: "File not found on disk" });
-    }
-
+    if (!fs.existsSync(file.localPath)) return res.status(404).json({ message: "File not found on disk" });
     res.set({
       "Content-Type": file.mimeType,
       "Content-Disposition": `inline; filename="${file.originalName}"`,
     });
-
     fs.createReadStream(file.localPath).pipe(res);
   });
 
-  // Delete file (local + FTP)
+  // Delete file
   app.delete("/api/files/:id", (req, res) => {
     const idx = files.findIndex((f) => f.id === req.params.id);
     if (idx === -1) return res.status(404).json({ message: "File not found" });
@@ -338,34 +336,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const file = files[idx];
     files.splice(idx, 1);
 
-    // Delete local file
+    // Delete local
     if (file.localPath && fs.existsSync(file.localPath) && !file.localPath.startsWith("ftp://")) {
-      try {
-        fs.unlinkSync(file.localPath);
-        console.log(`Local file deleted: ${file.localPath}`);
-      } catch (err) {
-        console.error("Failed to delete local file:", err);
-      }
+      try { fs.unlinkSync(file.localPath); } catch (err) { console.error("Failed to delete local file:", err); }
     }
 
-    // Delete from FTP
+    // Delete FTP
     if (file.ftpPath) {
       const ftp = new FTP();
       ftp.on("ready", () => {
         ftp.delete(file.ftpPath!, (err) => {
-          if (err) {
-            console.error("Failed to delete file from FTP:", err);
-          } else {
-            console.log(`Deleted from FTP: ${file.ftpPath}`);
-          }
+          if (err) console.error("Failed to delete FTP file:", err);
+          else console.log(`Deleted from FTP: ${file.ftpPath}`);
           ftp.end();
         });
       });
-
-      ftp.on("error", (err) => {
-        console.error("FTP delete connection error:", err);
-      });
-
+      ftp.on("error", (err) => console.error("FTP delete connection error:", err));
       ftp.connect(FTP_CONFIG);
     }
 

@@ -7,6 +7,7 @@ import Upload from "@/pages/upload";
 import Files from "@/pages/files";
 import Navbar from "@/components/navbar";
 import { queryClient } from "./lib/queryClient";
+import FtpStatus from "@/pages/FtpStatus";
 
 function Router() {
   return (
@@ -16,6 +17,7 @@ function Router() {
         <Route path="/" component={Upload} />
         <Route path="/upload" component={Upload} />
         <Route path="/files" component={Files} />
+        <Route path="/check" component={FtpStatus} />
         <Route component={NotFound} />
       </Switch>
     </div>
