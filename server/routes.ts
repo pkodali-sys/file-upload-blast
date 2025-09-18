@@ -57,9 +57,9 @@ const upload = multer({
 });
 
 const FTP_CONFIG = {
-  host: "172.24.29.4",
-  user: "ftp_bot",
-  password: "test@123",
+  host: process.env.FTP_HOST,
+  user: process.env.FTP_USER,
+  password: process.env.FTP_PASS,
   port: 21,
 };
 
