@@ -23,6 +23,43 @@ interface SimpleFile {
   ftpPath?: string;
 }
 
+//TODOs::
+// Create Login page consists of Username and Password
+
+// Create User credentials for admins:
+
+// Username: TBS_Admin
+
+// Password: HorseRunning18Miles!@
+
+// Create User credentials for marketing:
+
+// Usernames: User_Tao User_Diem  User_Stefania  User_Mike
+
+// Password:  TBS_Marketing!2025!
+
+// Secure the application paths such as dashboard and table. 
+
+// If user is not signed in:
+
+// They should not see dashboard and table
+
+// If User signed in:
+
+// They should see dashboard and table:
+
+// They should able to upload
+
+// They should able to copy link and delete the files
+
+// Logged in user should be able to maintain the logged in session if they refresh the page
+
+// User should have a time limit of 1 hour to login and will be automatically kicked out after the time is up. 
+
+// Add the protected routes logic so that only logged in users have access to dashboard and table pages. Unprotected users should reroute to fisherinvestments.com if they try to access the content.fi.com
+
+//
+
 const files: SimpleFile[] = [];
 
 const upload = multer({
