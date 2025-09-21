@@ -2,13 +2,22 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { SettingsIcon, DownloadIcon } from "lucide-react";
+
+// UPDATE your imports to include these:
+import { LogOut, User, Clock } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function Navbar() {
   const [location] = useLocation();
+  const { user, logoutMutation, sessionTimer } = useAuth();
+
   
   const isUploadActive = location === "/" || location === "/upload";
   const isFilesActive = location === "/files";
+
+    const handleLogout = () => {
+    logoutMutation.mutate();
+  };
 
   return (
     <header className="bg-card border-b border-border sticky top-0 z-50">
@@ -59,25 +68,44 @@ export default function Navbar() {
 
           {/* User Menu */}
           <div className="flex items-center space-x-4">
-            {/* <Button 
-              variant="ghost" 
-              size="sm"
-              className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent"
-              data-testid="button-download"
-            >
-              <DownloadIcon className="w-5 h-5" />
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="sm"
-              className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent"
-              data-testid="button-settings"
-            >
-              <SettingsIcon className="w-5 h-5" />
-            </Button>
-            <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
-              <span className="text-primary-foreground text-sm font-medium" data-testid="text-user-avatar">JD</span>
-            </div> */}
+            {/* Replace your existing user menu with this */}
+            {user && (
+              <>
+                <div className="flex items-center space-x-2 text-sm">
+                  <User className="h-4 w-4" />
+                  <span className="text-muted-foreground" data-testid="text-username">{user.username}</span>
+                </div>
+                {sessionTimer.remainingMs > 0 && (
+                  <div className="flex items-center space-x-2 text-sm px-2 py-1 bg-muted rounded-md">
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <span 
+                      className={cn(
+                        "font-mono text-xs",
+                        sessionTimer.remainingMs <= 300000 
+                          ? "text-destructive" // Red when <= 5 minutes
+                          : sessionTimer.remainingMs <= 600000 
+                          ? "text-yellow-600 dark:text-yellow-400" // Yellow when <= 10 minutes
+                          : "text-muted-foreground" // Normal when > 10 minutes
+                      )}
+                      data-testid="text-session-remaining"
+                    >
+                      Session: {sessionTimer.remainingText}
+                    </span>
+                  </div>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleLogout}
+                  disabled={logoutMutation.isPending}
+                  data-testid="button-logout"
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <LogOut className="h-4 w-4 mr-1" />
+                  {logoutMutation.isPending ? "Logging out..." : "Logout"}
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </div>
