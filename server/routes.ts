@@ -41,10 +41,11 @@ const sessionStore = new MemStoreSession({
 
 // Hardcoded user credentials
 const USERS = [
-  { id: "1", username: "test1", password: "test1@124" },
-  { id: "2", username: "test2", password: "test2@123" },
-  { id: "3", username: "test3", password: "test3@124" },
-  { id: "4", username: "test4", password: "test4@123" },
+  { id: "0", username: "TBS_Admin", password: "HorseRunning18Miles!@" },
+  { id: "1", username: "User_Tao", password: "TBS_Marketing!2025!" },
+  { id: "2", username: "User_Diem", password: "TBS_Marketing!2025!" },
+  { id: "3", username: "User_Stefania", password: "TBS_Marketing!2025!" },
+  { id: "4", username: "User_The_Mike", password: "TBS_Marketing!2025!" },
 ];
 
 // Helper function to find user by username and password
@@ -426,6 +427,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(session(sessionSettings));
   app.use(passport.initialize());
   app.use(passport.session());
+  app.use('/api/', (req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    next(); // Continue to the next middleware or route handler
+  });
 
   // Passport local strategy with hardcoded credentials
   passport.use(
@@ -457,6 +462,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AUTHENTICATION ROUTES - These MUST come before file routes
   // Login route
   app.post("/api/login", (req, res, next) => {
+      res.set('Cache-Control', 'no-store');
     try {
       // Validate request body
       const validatedData = loginCredentialsSchema.parse(req.body);
@@ -486,6 +492,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Logout route
   app.post("/api/logout", (req, res, next) => {
+      res.set('Cache-Control', 'no-store');
     req.logout((err) => {
       if (err) return next(err);
       res.json({ message: "Logged out successfully" });
@@ -494,6 +501,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get current user route
   app.get("/api/user", (req, res) => {
+      res.set('Cache-Control', 'no-store');
     if (req.isAuthenticated()) {
       const expiresAt = (req.session as any).expiresAt || Date.now() + 3600000;
       res.json({ ...req.user, expiresAt });
@@ -515,6 +523,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     requireAuth,
     upload.array("files", 10),
     async (req, res) => {
+        res.set('Cache-Control', 'no-store');
       try {
         const uploadedFiles = req.files as Express.Multer.File[];
         if (!uploadedFiles || uploadedFiles.length === 0) {
@@ -585,6 +594,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get files with pagination and search
   app.get("/api/files", requireAuth, async (req, res) => {
+      res.set('Cache-Control', 'no-store');
     try {
       const {
         page = "1",
@@ -639,6 +649,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get single file
   app.get("/api/files/:id", async (req, res) => {
+      res.set('Cache-Control', 'no-store');
     try {
       const { id } = req.params;
       const file = files.find((f) => f.id === id);
@@ -656,6 +667,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // View file
   app.get("/api/files/:id/view", async (req, res) => {
+      res.set('Cache-Control', 'no-store');
     try {
       const { id } = req.params;
       const file = files.find((f) => f.id === id);
@@ -696,6 +708,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Delete file
   app.delete("/api/files/:id", requireAuth, async (req, res) => {
+      res.set('Cache-Control', 'no-store');
+
     try {
       const { id } = req.params;
       const fileIndex = files.findIndex((f) => f.id === id);
@@ -724,21 +738,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Delete file error:", error);
       res.status(500).json({ message: "Failed to delete file" });
-    }
-  });
-
-  // Get expenses (simple mock response)
-  app.get("/api/expenses", async (req, res) => {
-    try {
-      res.json({
-        expenses: [],
-        total: 0,
-        page: 1,
-        totalPages: 0,
-      });
-    } catch (error) {
-      console.error("Get expenses error:", error);
-      res.status(500).json({ message: "Failed to fetch expenses" });
     }
   });
 
