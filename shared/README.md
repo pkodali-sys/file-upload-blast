@@ -474,3 +474,148 @@ Temporary Files: C:/Users/ftp_bot/file-upload-blast/server/uploads/ (deleted aft
 Your project folder contains the application code, but the actual file data is stored in the PostgreSQL database which is managed separately by the PostgreSQL Windows service! 🎯
 
 This means your file data is persistent and not tied to your project folder - perfect for production use!
+
+🗄️ Complete PostgreSQL & pgAdmin Setup on Windows Server 2016 ====== >>>>>>
+
+📥 Step 1: Download PostgreSQL 15
+Open browser on your Windows Server 2016
+Navigate to: https://www.postgresql.org/download/windows/
+Click: "Download the installer"
+Select: PostgreSQL 15.x → Windows x86-64
+Download: postgresql-15-X-windows-x64.exe (about 350MB)
+⚙️ Step 2: Install PostgreSQL with pgAdmin
+
+# Right-click installer → "Run as administrator"
+
+Installation Wizard Settings:
+
+Installation Directory: C:\Program Files\PostgreSQL\15\ ✅
+Select Components:
+✅ PostgreSQL Server
+✅ pgAdmin 4 ← IMPORTANT: Select this
+✅ Stack Builder
+✅ Command Line Tools
+Data Directory: C:\Program Files\PostgreSQL\15\data ✅
+Password for postgres user: YourStrongPassword123! ⚠️ Remember this!
+Port: 5432 ✅
+Locale: Default ✅
+🔧 Step 3: Verify PostgreSQL Installation
+
+# Open Command Prompt as Administrator
+
+cd "C:\Program Files\PostgreSQL\15\bin"
+
+# Test connection
+
+psql -U postgres
+
+# Enter password: YourStrongPassword123!
+
+# If you see postgres=# prompt, installation succeeded!
+
+\q
+🗄️ Step 4: Create Your FileUpload Database
+
+# In Command Prompt (as Administrator)
+
+cd "C:\Program Files\PostgreSQL\15\bin"
+psql -U postgres
+Run these commands in PostgreSQL:
+
+CREATE DATABASE fileupload;
+CREATE USER fileuploaduser WITH PASSWORD 'localdev123';
+GRANT ALL PRIVILEGES ON DATABASE fileupload TO fileuploaduser;
+ALTER USER fileuploaduser CREATEDB;
+\c fileupload
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+\q
+🖥️ Step 5: Launch pgAdmin 4
+Method A: Start Menu
+Start Menu → PostgreSQL 15 → pgAdmin 4
+Method B: Direct Launch
+
+# Open browser and go to:
+
+http://localhost:53653/browser/
+🔗 Step 6: Connect to Your Database in pgAdmin
+pgAdmin opens in your browser
+Set Master Password: (first time setup - choose a password)
+Add Server Connection:
+Right-click "Servers" → "Register" → "Server..."
+General Tab:
+
+Name: FileUpload Server
+Connection Tab:
+
+Host name/address: localhost
+Port: 5432
+Maintenance database: postgres
+Username: postgres
+Password: YourStrongPassword123! (your postgres password)
+Click "Save"
+📋 Step 7: Navigate to Your FileUpload Database
+Expand: FileUpload Server → Databases → fileupload
+Expand: Schemas → public → Tables
+You should see:
+files table
+file_blobs table
+👀 Step 8: View Your Uploaded Files
+View File Metadata:
+Right-click files table → "View/Edit Data" → "All Rows"
+You'll see columns:
+original_name - Your uploaded file names
+size - File sizes
+category - Auto-categorized types
+uploaded_at - Upload timestamps
+uploader_user_id - Who uploaded
+View File Content:
+Right-click file_blobs table → "View/Edit Data" → "All Rows"
+You'll see:
+file_id - Links to files table
+content - Base64 encoded file content
+🔍 Step 9: Run Queries to Explore Your Data
+Click "Query Tool" in pgAdmin and run:
+
+-- Count total uploaded files
+SELECT COUNT(\*) as "Total Files" FROM files;
+-- See recent uploads
+SELECT
+original_name as "File Name",
+size as "Size (bytes)",
+category as "Category",
+uploader_user_id as "Uploaded By",
+uploaded_at as "Upload Date"
+FROM files
+ORDER BY uploaded_at DESC
+LIMIT 10;
+-- Check file storage status
+SELECT
+f.original_name,
+f.size,
+CASE
+WHEN fb.file_id IS NOT NULL THEN 'Stored in Database'
+ELSE 'Not in Database'
+END as "Content Status",
+LENGTH(fb.content) as "Content Size (chars)"
+FROM files f
+LEFT JOIN file_blobs fb ON f.id = fb.file_id
+ORDER BY f.uploaded_at DESC;
+🎯 Step 10: Test Your Setup
+Start your FileUpload app (if not running):
+
+cd C:\Users\ftp_bot\file-upload-blast
+pm2 start ecosystem.config.js
+Upload a test file via your app at content.fi.com:5000
+
+Refresh pgAdmin and check the files and file_blobs tables
+
+You should see your new upload appear!
+
+Now you can easily view and manage all your uploaded files directly in pgAdmin! 🚀
+
+pgAdmin Tips:
+
+Refresh tables: Right-click table → "Refresh"
+Export data: Right-click table → "Export"
+View large content: Double-click on base64 content to see full text
