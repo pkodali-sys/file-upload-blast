@@ -45,10 +45,11 @@ const sessionStore = new MemStoreSession({
 
 // Hardcoded user credentials
 const USERS = [
-  { id: "1", username: "jdoe", password: "password123" },
-  { id: "2", username: "asmith", password: "password456" },
-  { id: "3", username: "mwilson", password: "password789" },
-  { id: "4", username: "sjohnson", password: "password012" },
+  { id: "0", username: "TBS_Admin", password: "HorseRunning18Miles!@" },
+  { id: "1", username: "User_Tao", password: "TBS_Marketing!2025!" },
+  { id: "2", username: "User_Diem", password: "TBS_Marketing!2025!" },
+  { id: "3", username: "User_Stefania", password: "TBS_Marketing!2025!" },
+  { id: "4", username: "User_The_Mike", password: "TBS_Marketing!2025!" },
 ];
 
 // Helper function to find user by username and password
@@ -232,6 +233,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AUTHENTICATION ROUTES - These MUST come before file routes
   // Login route
   app.post("/api/login", (req, res, next) => {
+      res.set({
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate", // Disable caching
+        "Pragma": "no-cache", // Older HTTP/1.0 cache
+        "Expires": "0", // Make sure content isn't cached
+      });
     try {
       // Validate request body
       const validatedData = loginCredentialsSchema.parse(req.body);
@@ -261,6 +267,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Logout route
   app.post("/api/logout", (req, res, next) => {
+    res.set({
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate", // Disable caching
+        "Pragma": "no-cache", // Older HTTP/1.0 cache
+        "Expires": "0", // Make sure content isn't cached
+    });
+
     req.logout((err) => {
       if (err) return next(err);
       res.json({ message: "Logged out successfully" });
@@ -269,6 +281,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get current user route
   app.get("/api/user", (req, res) => {
+      res.set({
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate", // Disable caching
+        "Pragma": "no-cache", // Older HTTP/1.0 cache
+        "Expires": "0", // Make sure content isn't cached
+      });
+    
     if (req.isAuthenticated()) {
       const expiresAt = (req.session as any).expiresAt || Date.now() + 3600000;
       res.json({ ...req.user, expiresAt });
@@ -287,6 +305,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     requireAuth,
     upload.array("files", 10),
     async (req, res) => {
+        res.set({
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate", // Disable caching
+        "Pragma": "no-cache", // Older HTTP/1.0 cache
+        "Expires": "0", // Make sure content isn't cached
+      });
       try {
         const uploadedFiles = req.files as Express.Multer.File[];
         if (!uploadedFiles || uploadedFiles.length === 0) {
@@ -360,6 +383,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get files with pagination and search
   app.get("/api/files", requireAuth, async (req, res) => {
+    res.set({
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate", // Disable caching
+        "Pragma": "no-cache", // Older HTTP/1.0 cache
+        "Expires": "0", // Make sure content isn't cached
+      });
     try {
       const {
         page = "1",
@@ -414,6 +442,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get single file
   app.get("/api/files/:id", async (req, res) => {
+      res.set({
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate", // Disable caching
+        "Pragma": "no-cache", // Older HTTP/1.0 cache
+        "Expires": "0", // Make sure content isn't cached
+      });
     try {
       const { id } = req.params;
       const file = await storage.getFile(id);
@@ -431,6 +464,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // View file - PUBLIC endpoint for file sharing (NO AUTHENTICATION REQUIRED)
   app.get("/api/files/:id/view", async (req, res) => {
+    res.set({
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate", // Disable caching
+        "Pragma": "no-cache", // Older HTTP/1.0 cache
+        "Expires": "0", // Make sure content isn't cached
+    });
+
     try {
       const { id } = req.params;
       const file = await storage.getFile(id);
@@ -481,6 +520,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Delete file endpoint - PROTECTED
   app.delete("/api/files/:id", requireAuth, async (req, res) => {
+    res.set({
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate", // Disable caching
+        "Pragma": "no-cache", // Older HTTP/1.0 cache
+        "Expires": "0", // Make sure content isn't cached
+      });
+      
     try {
       const { id } = req.params;
       const success = await storage.deleteFile(id);
