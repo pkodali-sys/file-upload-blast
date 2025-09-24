@@ -3,20 +3,26 @@ import { createServer, type Server } from "http";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import FTP from "ftp";
 import { fileURLToPath } from "url";
 import { randomUUID } from "crypto";
 import session from "express-session";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import MemoryStore from "memorystore";
-import { User, LoginCredentials, loginCredentialsSchema } from "shared/schema";
+import {
+  User,
+  LoginCredentials,
+  loginCredentialsSchema,
+} from "../shared/schema.js";
+import { createTables } from "./migrate.js";
+import { storage, DatabaseStorage } from "./storage.js";
 
 // ES modules equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Simple in-memory storage for files (no persistence)
+// File storage will be managed by the storage interface
+// Legacy interface maintained for compatibility
 interface SimpleFile {
   id: string;
   name: string;
@@ -30,8 +36,6 @@ interface SimpleFile {
   localPath: string;
 }
 
-const files: SimpleFile[] = [];
-
 // Authentication Setup - All in one place
 const MemStoreSession = MemoryStore(session);
 const sessionStore = new MemStoreSession({
@@ -41,11 +45,10 @@ const sessionStore = new MemStoreSession({
 
 // Hardcoded user credentials
 const USERS = [
-  { id: "0", username: "TBS_Admin", password: "HorseRunning18Miles!@" },
-  { id: "1", username: "User_Tao", password: "TBS_Marketing!2025!" },
-  { id: "2", username: "User_Diem", password: "TBS_Marketing!2025!" },
-  { id: "3", username: "User_Stefania", password: "TBS_Marketing!2025!" },
-  { id: "4", username: "User_The_Mike", password: "TBS_Marketing!2025!" },
+  { id: "1", username: "jdoe", password: "password123" },
+  { id: "2", username: "asmith", password: "password456" },
+  { id: "3", username: "mwilson", password: "password789" },
+  { id: "4", username: "sjohnson", password: "password012" },
 ];
 
 // Helper function to find user by username and password
@@ -120,221 +123,6 @@ const upload = multer({
   },
 });
 
-// FTP Configuration from Environment Variables
-const FTP_CONFIG = {
-  host: process.env.FTP_HOST || "localhost",
-  user: process.env.FTP_USER || "anonymous",
-  password: process.env.FTP_PASSWORD || "",
-  connTimeout: 60000,
-  pasvTimeout: 60000,
-  keepalive: 60000,
-};
-
-async function uploadToFTP(
-  localFilePath: string,
-  fileName: string
-): Promise<boolean> {
-  // First ensure uploads directory exists
-  const dirCreated = await createFTPUploadsDir();
-  if (!dirCreated) {
-    console.log("Warning: Could not verify uploads directory exists");
-  }
-
-  return new Promise((resolve) => {
-    const ftp = new FTP();
-
-    ftp.on("ready", () => {
-      console.log("FTP connection established");
-      ftp.put(localFilePath, `public_html/uploads/${fileName}`, (err) => {
-        if (err) {
-          console.error("FTP upload error:", err);
-          resolve(false);
-        } else {
-          console.log(`File uploaded to FTP: ${fileName}`);
-          resolve(true);
-        }
-        ftp.end();
-      });
-    });
-
-    ftp.on("error", (err) => {
-      console.error("FTP connection error:", err);
-      resolve(false);
-    });
-
-    ftp.connect(FTP_CONFIG);
-  });
-}
-
-// Create uploads directory on FTP server
-async function createFTPUploadsDir(): Promise<boolean> {
-  return new Promise((resolve) => {
-    const ftp = new FTP();
-
-    ftp.on("ready", () => {
-      console.log("FTP connection established for directory creation");
-
-      // First check if public_html exists
-      ftp.list("public_html", (err, list) => {
-        if (err) {
-          console.log("public_html directory not found, creating it...");
-          ftp.mkdir("public_html", (mkdirErr) => {
-            if (mkdirErr) {
-              console.error("Failed to create public_html:", mkdirErr);
-              ftp.end();
-              resolve(false);
-              return;
-            }
-
-            // Now create uploads directory
-            ftp.mkdir("public_html/uploads", (uploadsErr) => {
-              if (uploadsErr) {
-                console.error(
-                  "Failed to create uploads directory:",
-                  uploadsErr
-                );
-                resolve(false);
-              } else {
-                console.log(
-                  "Successfully created public_html/uploads directory"
-                );
-                resolve(true);
-              }
-              ftp.end();
-            });
-          });
-        } else {
-          // public_html exists, now check/create uploads
-          ftp.mkdir("public_html/uploads", (uploadsErr) => {
-            if (uploadsErr && (uploadsErr as any).code !== 550) {
-              // 550 means directory already exists, which is fine
-              console.error("Failed to create uploads directory:", uploadsErr);
-              resolve(false);
-            } else {
-              console.log(
-                "Uploads directory ready (created or already exists)"
-              );
-              resolve(true);
-            }
-            ftp.end();
-          });
-        }
-      });
-    });
-
-    ftp.on("error", (err) => {
-      console.error("FTP connection error during directory creation:", err);
-      resolve(false);
-    });
-
-    ftp.connect(FTP_CONFIG);
-  });
-}
-
-// List files from FTP server
-async function listFTPFiles(): Promise<any[]> {
-  return new Promise((resolve) => {
-    const ftp = new FTP();
-
-    ftp.on("ready", () => {
-      console.log("FTP connection established for file listing");
-      ftp.list("public_html/uploads", (err, list) => {
-        if (err) {
-          console.error("FTP list error:", err);
-          resolve([]);
-        } else {
-          console.log(`Found ${list.length} files on FTP server`);
-          resolve(list || []);
-        }
-        ftp.end();
-      });
-    });
-
-    ftp.on("error", (err) => {
-      console.error("FTP connection error during listing:", err);
-      resolve([]);
-    });
-
-    ftp.connect(FTP_CONFIG);
-  });
-}
-
-// Sync files from FTP server on startup
-async function syncFilesFromFTP(): Promise<void> {
-  try {
-    console.log("Syncing files from FTP server...");
-
-    // First ensure the uploads directory exists
-    console.log("Creating uploads directory if it doesn't exist...");
-    const dirCreated = await createFTPUploadsDir();
-    if (!dirCreated) {
-      console.log(
-        "Could not create/verify uploads directory, but continuing anyway..."
-      );
-    }
-
-    const ftpFiles = await listFTPFiles();
-
-    for (const ftpFile of ftpFiles) {
-      // Skip directories and system files
-      if (ftpFile.type !== "-" || ftpFile.name.startsWith(".")) {
-        continue;
-      }
-
-      // Check if file already exists in memory
-      const existingFile = files.find(
-        (f) => f.name === ftpFile.name || f.localPath?.includes(ftpFile.name)
-      );
-      if (existingFile) {
-        continue; // Skip if already in memory
-      }
-
-      // Extract original filename and reconstruct metadata
-      const fileName = ftpFile.name;
-      // Updated regex to match new format: timestamp-random-originalname.ext
-      const originalName = fileName.replace(/^\d+-[a-z0-9]+-/, "") || fileName; // Remove timestamp-random prefix, fallback to filename
-
-      // Debug logging
-      console.log(`Processing FTP file: ${fileName}`);
-      console.log(`Extracted original name: ${originalName}`);
-
-      const extension = path.extname(fileName).toLowerCase();
-
-      // Only sync PDF files
-      if (extension !== ".pdf") {
-        continue;
-      }
-
-      // Set MIME type for PDF
-      const mimeType = "application/pdf";
-
-      // Create file metadata
-      const fileData: SimpleFile = {
-        id: randomUUID(),
-        name: originalName.startsWith(".") ? fileName : originalName,
-        originalName: originalName.startsWith(".") ? fileName : originalName,
-        size: ftpFile.size || 0,
-        mimeType,
-        category: categorizeFile(originalName, mimeType),
-        amount: extractAmount(originalName)?.toString(),
-        uploadedAt: ftpFile.date
-          ? new Date(ftpFile.date).toISOString()
-          : new Date().toISOString(),
-        isProcessed: true,
-        localPath: `ftp://${fileName}`, // Special path to indicate FTP-only file
-      };
-
-      files.push(fileData);
-    }
-
-    console.log(
-      `Synced ${ftpFiles.length} files from FTP. Total files in memory: ${files.length}`
-    );
-  } catch (error) {
-    console.error("Error syncing files from FTP:", error);
-  }
-}
-
 // Simple categorization function
 function categorizeFile(filename: string, mimeType: string): string {
   const name = filename.toLowerCase();
@@ -381,31 +169,17 @@ function extractAmount(filename: string): number | null {
   return match ? parseFloat(match[1]) : null;
 }
 
-// Sanitize filename for safe FTP storage
-function sanitizeFilename(filename: string): string {
-  // Remove path separators and dangerous characters
-  let sanitized = filename.replace(/[\/\\:*?"<>|]/g, "");
-
-  // Replace spaces with underscores
-  sanitized = sanitized.replace(/\s+/g, "_");
-
-  // Collapse multiple underscores
-  sanitized = sanitized.replace(/_+/g, "_");
-
-  // Remove leading/trailing underscores
-  sanitized = sanitized.replace(/^_+|_+$/g, "");
-
-  // Limit length (keep extension)
-  const ext = path.extname(sanitized);
-  const base = sanitized.slice(0, -ext.length);
-  if (base.length > 80) {
-    sanitized = base.slice(0, 80) + ext;
+export async function registerRoutes(app: Express): Promise<Server> {
+  // Initialize database tables first
+  console.log("Initializing database...");
+  try {
+    await createTables();
+    console.log("Database initialization completed!");
+  } catch (error) {
+    console.error("Database initialization failed:", error);
+    process.exit(1);
   }
 
-  return sanitized;
-}
-
-export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication directly here - no external file needed
   const sessionSettings: session.SessionOptions = {
     secret:
@@ -427,10 +201,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(session(sessionSettings));
   app.use(passport.initialize());
   app.use(passport.session());
-  app.use('/api/', (req, res, next) => {
-    res.set('Cache-Control', 'no-store');
-    next(); // Continue to the next middleware or route handler
-  });
 
   // Passport local strategy with hardcoded credentials
   passport.use(
@@ -462,7 +232,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AUTHENTICATION ROUTES - These MUST come before file routes
   // Login route
   app.post("/api/login", (req, res, next) => {
-      res.set('Cache-Control', 'no-store');
     try {
       // Validate request body
       const validatedData = loginCredentialsSchema.parse(req.body);
@@ -492,7 +261,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Logout route
   app.post("/api/logout", (req, res, next) => {
-      res.set('Cache-Control', 'no-store');
     req.logout((err) => {
       if (err) return next(err);
       res.json({ message: "Logged out successfully" });
@@ -501,7 +269,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get current user route
   app.get("/api/user", (req, res) => {
-      res.set('Cache-Control', 'no-store');
     if (req.isAuthenticated()) {
       const expiresAt = (req.session as any).expiresAt || Date.now() + 3600000;
       res.json({ ...req.user, expiresAt });
@@ -514,16 +281,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     "Authentication setup complete - 4 users configured with 1 hour session timeout"
   );
 
-  // Sync existing files from FTP server on startup
-  await syncFilesFromFTP();
-
   // File upload endpoint - PROTECTED (requires authentication)
   app.post(
     "/api/files/upload",
     requireAuth,
     upload.array("files", 10),
     async (req, res) => {
-        res.set('Cache-Control', 'no-store');
       try {
         const uploadedFiles = req.files as Express.Multer.File[];
         if (!uploadedFiles || uploadedFiles.length === 0) {
@@ -536,24 +299,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const category = categorizeFile(file.originalname, file.mimetype);
           const amount = extractAmount(file.originalname);
 
-          // Create FTP filename with original filename embedded
-          const sanitizedOriginal = sanitizeFilename(file.originalname);
-          const ftpFileName = `${file.filename.replace(
-            path.extname(file.filename),
-            ""
-          )}-${sanitizedOriginal}`;
-
-          // Debug logging
-          console.log(`Upload debug - Original name: ${file.originalname}`);
-          console.log(`Upload debug - Local filename: ${file.filename}`);
-          console.log(`Upload debug - Sanitized: ${sanitizedOriginal}`);
-          console.log(`Upload debug - FTP filename: ${ftpFileName}`);
-
-          // Upload to FTP server (async, don't wait for completion)
-          const ftpUploadPromise = uploadToFTP(file.path, ftpFileName);
-
           const fileData: SimpleFile = {
-            id: randomUUID(),
+            id: randomUUID(), // Temporary ID, will be replaced by database
             name: file.originalname, // This should always be the original filename
             originalName: file.originalname,
             size: file.size,
@@ -565,21 +312,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
             localPath: file.path,
           };
 
-          // Debug: verify what we're storing
+          // Save file metadata to database and get the actual database-generated ID
+          const savedFile = await storage.saveFile(fileData);
+
+          // Store file content in database for sharing using the correct database ID
+          if (storage instanceof DatabaseStorage) {
+            try {
+              console.log(
+                `Reading file from: ${file.path} (${file.size} bytes)`
+              );
+
+              // Check if file exists before reading
+              if (!fs.existsSync(file.path)) {
+                throw new Error(`File does not exist at path: ${file.path}`);
+              }
+
+              const fileContent = fs.readFileSync(file.path);
+              await storage.saveFileContent(savedFile.id, fileContent);
+              console.log(
+                `File content stored in database for: ${file.originalname} (${fileContent.length} bytes)`
+              );
+            } catch (error) {
+              console.error(
+                `Failed to store file content in database for ${file.originalname}:`,
+                error
+              );
+            }
+          }
+
+          // Update fileData with the correct database ID for response
+          fileData.id = savedFile.id;
+
           console.log(
-            `Storing file data - name: ${fileData.name}, originalName: ${fileData.originalName}`
+            `File ${file.originalname} uploaded successfully to database`
           );
-
-          files.push(fileData);
-
-          // Try FTP upload and update status
-          ftpUploadPromise.then((ftpSuccess) => {
-            console.log(
-              `File ${file.originalname} - Local: ✓ FTP: ${
-                ftpSuccess ? "✓" : "✗"
-              }`
-            );
-          });
 
           processedFiles.push(fileData);
         }
@@ -594,7 +360,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get files with pagination and search
   app.get("/api/files", requireAuth, async (req, res) => {
-      res.set('Cache-Control', 'no-store');
     try {
       const {
         page = "1",
@@ -603,7 +368,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         category,
       } = req.query as Record<string, string>;
 
-      let filteredFiles = [...files];
+      let filteredFiles = await storage.getAllFiles();
 
       // Apply filters
       if (search) {
@@ -649,10 +414,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get single file
   app.get("/api/files/:id", async (req, res) => {
-      res.set('Cache-Control', 'no-store');
     try {
       const { id } = req.params;
-      const file = files.find((f) => f.id === id);
+      const file = await storage.getFile(id);
 
       if (!file) {
         return res.status(404).json({ message: "File not found" });
@@ -665,73 +429,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // View file
+  // View file - PUBLIC endpoint for file sharing (NO AUTHENTICATION REQUIRED)
   app.get("/api/files/:id/view", async (req, res) => {
-      res.set('Cache-Control', 'no-store');
     try {
       const { id } = req.params;
-      const file = files.find((f) => f.id === id);
+      const file = await storage.getFile(id);
 
-      if (!file || !file.localPath) {
+      if (!file) {
         return res.status(404).json({ message: "File not found" });
       }
 
-      // Handle FTP-only files
-      if (file.localPath.startsWith("ftp://")) {
-        const fileName = file.localPath.replace("ftp://", "");
-        const ftpFileUrl = `https://${FTP_CONFIG.host.replace(
-          "files.",
-          ""
-        )}/uploads/${fileName}`;
-        return res.redirect(ftpFileUrl);
-      }
-
-      // Check if file exists locally
-      if (!fs.existsSync(file.localPath)) {
-        return res.status(404).json({ message: "File not found on disk" });
-      }
-
-      // Set appropriate headers
+      // Set appropriate headers for file download/viewing
       res.set({
         "Content-Type": file.mimeType,
         "Content-Disposition": `inline; filename="${file.originalName}"`,
+        "Cache-Control": "public, max-age=3600", // Cache for 1 hour
       });
 
-      // Stream the file
-      const fileStream = fs.createReadStream(file.localPath);
-      fileStream.pipe(res);
+      // Try to serve file content from database first (PRIMARY SOURCE)
+      if (storage instanceof DatabaseStorage) {
+        try {
+          const fileContent = await storage.getFileContent(file.id);
+          if (fileContent) {
+            res.send(fileContent);
+            return;
+          }
+        } catch (error) {
+          console.error("Failed to get file content from database:", error);
+        }
+      }
+
+      // Fallback to local file if database content not available
+      if (file.localPath && fs.existsSync(file.localPath)) {
+        const fileStream = fs.createReadStream(file.localPath);
+        fileStream.on("error", (err) => {
+          console.error("Stream error:", err);
+          if (!res.headersSent) {
+            res.status(500).json({ message: "Failed to stream file" });
+          }
+        });
+        fileStream.pipe(res);
+        return;
+      }
+
+      return res.status(404).json({ message: "File content not found" });
     } catch (error) {
-      console.error("File serve error:", error);
-      res.status(500).json({ message: "Failed to serve file" });
+      console.error("View file error:", error);
+      res.status(500).json({ message: "Failed to view file" });
     }
   });
 
-  // Delete file
+  // Delete file endpoint - PROTECTED
   app.delete("/api/files/:id", requireAuth, async (req, res) => {
-      res.set('Cache-Control', 'no-store');
-
     try {
       const { id } = req.params;
-      const fileIndex = files.findIndex((f) => f.id === id);
+      const success = await storage.deleteFile(id);
 
-      if (fileIndex === -1) {
+      if (!success) {
         return res.status(404).json({ message: "File not found" });
-      }
-
-      const file = files[fileIndex];
-
-      // Remove from in-memory storage
-      files.splice(fileIndex, 1);
-
-      // Optionally delete the local file from disk
-      if (file.localPath && fs.existsSync(file.localPath)) {
-        try {
-          fs.unlinkSync(file.localPath);
-          console.log(`Local file deleted: ${file.localPath}`);
-        } catch (error) {
-          console.error("Failed to delete local file:", error);
-          // Continue anyway since we removed it from memory
-        }
       }
 
       res.json({ message: "File deleted successfully" });
@@ -741,6 +496,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  const httpServer = createServer(app);
-  return httpServer;
+  const server = createServer(app);
+  return server;
 }
