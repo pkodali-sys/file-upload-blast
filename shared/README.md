@@ -365,3 +365,112 @@ App: E:\fileupload\
 Logs: E:\fileupload\logs\
 Database: PostgreSQL on localhost:5432
 Port: 5000 (accessible via server IP)
+
+How Database connection works ?
+
+🖥️ Server Architecture - Same Machine
+Both Node.js app and PostgreSQL database are running on the SAME Windows server:
+
+Windows Server 2016 (IP: xxx.xxx.xxx.xxx)
+├── Node.js App (Port 5000) ← FileUpload application  
+├── PostgreSQL (Port 5432) ← database
+└── IIS/DNS → content.fi.com points to this server
+
+🔄 Connection Flow:
+External Access (Users):
+User Browser → content.fi.com → Your Server IP → Node.js App (Port 5000)
+Internal Database Connection (App to DB):
+Node.js App → localhost:5432 → PostgreSQL (same server)
+📡 Why localhost:5432 Works:
+"localhost" means "this same machine"
+Your Node.js app and PostgreSQL are on the same Windows server
+So when the app connects to localhost:5432, it's connecting to PostgreSQL running locally on the same server
+🌐 Complete Data Flow:
+
+1. User visits: content.fi.com
+   ↓
+2. DNS/IIS routes to: Your Server IP:5000  
+   ↓
+3. Node.js app receives request
+   ↓
+4. App connects to: localhost:5432 (PostgreSQL on same server)
+   ↓
+5. Database returns data
+   ↓
+6. App sends response back to user
+   🔧 Your .env Configuration:
+
+# This works because PostgreSQL is on the SAME server
+
+DATABASE_URL=postgresql://fileuploaduser:localdev123@localhost:5432/fileupload
+↑
+Same machine as your app
+✅ To Verify This Setup:
+
+# On your Windows server, check both services:
+
+# 1. Check Node.js app
+
+netstat -an | findstr :5000
+
+# 2. Check PostgreSQL
+
+netstat -an | findstr :5432
+
+# Both should show LISTENING on the same server
+
+Summary: Your app runs on content.fi.com (external domain) but connects to localhost:5432 (internal database) because both services are on the same Windows server! 🎯
+
+This is a standard single-server deployment architecture - very common and efficient! 🚀
+
+📁 More on Storage Locations on Windows Server:
+
+1. Application Code
+   C:/Users/ftp_bot/file-upload-blast/
+   ├── server/
+   ├── client/
+   ├── shared/
+   ├── dist/ (built application)
+   ├── server/uploads/ (temporary files only)
+   └── .env (database connection settings)
+2. PostgreSQL Database (Separate Location)
+   C:\Program Files\PostgreSQL\15\data\
+   ├── postgresql.conf
+   ├── pg_hba.conf
+   └── [database files] ← Your actual data is here
+3. Uploaded Files Storage
+   Your uploaded files are stored INSIDE the PostgreSQL database, not as files:
+
+File metadata → files table in PostgreSQL
+File content → file_blobs table in PostgreSQL (as base64)
+🗄️ How It Works:
+Upload Process:
+
+File temporarily saved to: C:/Users/ftp_bot/file-upload-blast/server/uploads/
+File content read and stored as base64 in PostgreSQL database
+Temporary file can be deleted (database has everything)
+File Sharing:
+
+Files served directly from PostgreSQL database
+No local files needed for sharing links
+Database Location:
+
+PostgreSQL service manages data in: C:\Program Files\PostgreSQL\15\data\
+Your app connects via: localhost:5432
+🔍 To Verify Database Location:
+
+# Check PostgreSQL data directory
+
+psql -h localhost -p 5432 -U fileuploaduser -d fileupload -c "SHOW data_directory;"
+
+# Check your uploaded files in database
+
+psql -h localhost -p 5432 -U fileuploaduser -d fileupload -c "SELECT original_name, size FROM files;"
+📊 Summary:
+Application: C:/Users/ftp_bot/file-upload-blast/
+Database: C:\Program Files\PostgreSQL\15\data\ (managed by PostgreSQL service)
+File Storage: Inside PostgreSQL database (not as separate files)
+Temporary Files: C:/Users/ftp_bot/file-upload-blast/server/uploads/ (deleted after processing)
+Your project folder contains the application code, but the actual file data is stored in the PostgreSQL database which is managed separately by the PostgreSQL Windows service! 🎯
+
+This means your file data is persistent and not tied to your project folder - perfect for production use!
