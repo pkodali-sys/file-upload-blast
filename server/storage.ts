@@ -89,7 +89,58 @@ export class DatabaseStorage implements IStorage {
     return file || null;
   }
 
-  async getFiles(params: FileSearchParams): Promise<PaginatedResult<File>> {
+  // async getFiles(params: FileSearchParams): Promise<PaginatedResult<File>> {
+  //   const page = params.page || 1;
+  //   const limit = params.limit || 20;
+  //   const offset = (page - 1) * limit;
+
+  //   // Build where conditions
+  //   const conditions = [];
+
+  //   if (params.search) {
+  //     conditions.push(
+  //       or(
+  //         like(files.originalName, `%${params.search}%`),
+  //         like(files.storedName, `%${params.search}%`)
+  //       )
+  //     );
+  //   }
+
+  //   if (params.category) {
+  //     conditions.push(eq(files.category, params.category));
+  //   }
+
+  //   if (params.source) {
+  //     conditions.push(eq(files.source, params.source));
+  //   }
+
+  //   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  //   // Get total count
+  //   const [{ total }] = await db
+  //     .select({ total: count() })
+  //     .from(files)
+  //     .where(whereClause);
+
+  //   // Get paginated data
+  //   const data = await db
+  //     .select()
+  //     .from(files)
+  //     .where(whereClause)
+  //     .orderBy(desc(files.uploadedAt))
+  //     .limit(limit)
+  //     .offset(offset);
+
+  //   return {
+  //     data,
+  //     total: Number(total),
+  //     page,
+  //     limit,
+  //     totalPages: Math.ceil(Number(total) / limit),
+  //   };
+  // }
+
+    async getFiles(params: FileSearchParams): Promise<PaginatedResult<File>> {
     const page = params.page || 1;
     const limit = params.limit || 20;
     const offset = (page - 1) * limit;
@@ -98,10 +149,11 @@ export class DatabaseStorage implements IStorage {
     const conditions = [];
 
     if (params.search) {
+      const searchValue = `%${params.search}%`;
       conditions.push(
         or(
-          like(files.originalName, `%${params.search}%`),
-          like(files.storedName, `%${params.search}%`)
+          like(sql`LOWER(${files.originalName})`, sql`LOWER(${searchValue})`),
+          like(sql`LOWER(${files.storedName})`, sql`LOWER(${searchValue})`)
         )
       );
     }
@@ -136,9 +188,10 @@ export class DatabaseStorage implements IStorage {
       total: Number(total),
       page,
       limit,
-      totalPages: Math.ceil(Number(total) / limit),
+      totalPages: Math.ceil(Number(total) / limit) || 1,
     };
   }
+
 
   async saveFileContent(fileId: string, content: Buffer): Promise<void> {
     const base64Content = content.toString("base64");

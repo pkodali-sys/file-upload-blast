@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DownloadIcon, PlusIcon, SearchIcon, FilterIcon } from "lucide-react";
 import FilesTable from "@/components/files-table";
+import { File, PaginatedResult } from "shared/schema";
 
 export default function Files() {
   const [page, setPage] = useState(1);
@@ -12,17 +13,29 @@ export default function Files() {
   const [category, setCategory] = useState("all");
   const limit = 10;
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: [
-      "/api/files",
-      {
-        page,
-        limit,
-        search: search || undefined,
-        category: category === "all" ? undefined : category,
-      },
-    ],
+  // Keep previous data while fetching next page
+  const [previousData, setPreviousData] = useState<PaginatedResult<File> | null>(null);
+
+  const { data, isLoading, error } = useQuery<PaginatedResult<File>, Error>({
+    queryKey: ["files", page, search ?? "", category],
+    queryFn: async (): Promise<PaginatedResult<File>> => {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString(),
+        ...(search ? { search } : {}),
+        ...(category !== "all" ? { category } : {}),
+      });
+
+      const res = await fetch(`/api/files?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed to fetch files");
+      return res.json();
+    },
+    onSuccess: (newData) => {
+      setPreviousData(newData);
+    },
   });
+
+  const displayData = data ?? previousData;
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -48,17 +61,38 @@ export default function Files() {
                 type="text"
                 placeholder="Search files..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1); // Reset page when searching
+                }}
                 className="pl-10"
                 data-testid="input-search"
               />
             </div>
           </div>
+          <div>
+            <Select
+              value={category}
+              onValueChange={(val) => {
+                setCategory(val);
+                setPage(1); // Reset page when changing category
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="documents">Documents</SelectItem>
+                <SelectItem value="images">Images</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        {/* Data Table */}
+        {/* Files Table */}
         <FilesTable
-          data={data as any}
+          data={displayData as any}
           isLoading={isLoading}
           error={error}
           page={page}
