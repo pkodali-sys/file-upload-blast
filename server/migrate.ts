@@ -1,12 +1,14 @@
-// Manual database migration script for file storage tables
+// migrate.ts
 import { db } from "./db.js";
 import { sql } from "drizzle-orm";
 
-async function createTables() {
-  console.log("Creating database tables for file storage...");
+export async function createTables() {
+  console.log("🛠️ Creating database tables for file storage...");
 
   try {
-    // Create files table
+    // ==========================================
+    // FILES TABLE
+    // ==========================================
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS files (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -22,40 +24,46 @@ async function createTables() {
         sha256 TEXT,
         uploader_user_id TEXT,
         is_processed BOOLEAN NOT NULL DEFAULT false
-      )
-    `);
-
-    // Create indexes for performance
-    await db.execute(sql`
-      CREATE INDEX IF NOT EXISTS idx_files_uploaded_at ON files (uploaded_at DESC)
+      );
     `);
 
     await db.execute(sql`
-      CREATE INDEX IF NOT EXISTS idx_files_category ON files (category)
+      CREATE INDEX IF NOT EXISTS idx_files_uploaded_at ON files (uploaded_at DESC);
     `);
 
     await db.execute(sql`
-      CREATE INDEX IF NOT EXISTS idx_files_source ON files (source)
+      CREATE INDEX IF NOT EXISTS idx_files_category ON files (category);
     `);
 
-    // Create file_blobs table for storing file contents
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_files_source ON files (source);
+    `);
+
+    // ==========================================
+    // FILE BLOBS TABLE
+    // ==========================================
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS file_blobs (
         file_id UUID PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
         content TEXT NOT NULL
-      )
+      );
     `);
 
-    console.log("Database tables created successfully!");
+    // ==========================================
+    // SESSION TABLE
+    // ==========================================
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "session" (
+        sid VARCHAR NOT NULL COLLATE "default",
+        sess JSON NOT NULL,
+        expire TIMESTAMP(6) NOT NULL,
+        PRIMARY KEY (sid)
+      );
+    `);
 
-    // Test the connection by inserting a test record
-    console.log("Testing database connection...");
-
-    return true;
+    console.log("✅ All database tables created successfully!");
   } catch (error) {
-    console.error("Error creating database tables:", error);
+    console.error("❌ Error creating database tables:", error);
     throw error;
   }
 }
-
-export { createTables };

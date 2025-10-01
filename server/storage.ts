@@ -53,8 +53,6 @@ export class DatabaseStorage implements IStorage {
       storedName: file.name,
       mimeType: file.mimeType,
       size: file.size,
-      category: file.category,
-      amount: file.amount ? file.amount : null,
       source: "local",
       storageUrl: file.localPath,
       isProcessed: file.isProcessed,
@@ -158,10 +156,6 @@ export class DatabaseStorage implements IStorage {
       );
     }
 
-    if (params.category) {
-      conditions.push(eq(files.category, params.category));
-    }
-
     if (params.source) {
       conditions.push(eq(files.source, params.source));
     }
@@ -230,8 +224,6 @@ export class DatabaseStorage implements IStorage {
           storedName: file.name,
           mimeType: file.mimeType,
           size: file.size,
-          category: file.category,
-          amount: file.amount || null,
           source: "local",
           storageUrl: file.localPath,
           isProcessed: file.isProcessed,
@@ -252,8 +244,6 @@ export class DatabaseStorage implements IStorage {
       originalName: dbFile.originalName,
       size: dbFile.size,
       mimeType: dbFile.mimeType,
-      category: dbFile.category,
-      amount: dbFile.amount || undefined,
       uploadedAt: dbFile.uploadedAt.toISOString(),
       isProcessed: dbFile.isProcessed,
       localPath: dbFile.storageUrl || "",

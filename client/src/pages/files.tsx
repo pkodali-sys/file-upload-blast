@@ -2,7 +2,13 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { DownloadIcon, SearchIcon } from "lucide-react";
 import FilesTable from "@/components/files-table";
 import * as XLSX from "xlsx";
@@ -16,10 +22,11 @@ export default function Files() {
   const limit = 10;
 
   // Keep previous data while fetching next page
-  const [previousData, setPreviousData] = useState<PaginatedResult<File> | null>(null);
+  const [previousData, setPreviousData] =
+    useState<PaginatedResult<File> | null>(null);
 
-  // Replace this with your real logged-in user info
-  const currentUser = { username: "TBS_Admin" }; 
+  // Replace with actual user context or backend call
+  const currentUser = { username: "TBS_Admin" };
 
   const { data, isLoading, error } = useQuery<PaginatedResult<File>, Error>({
     queryKey: ["files", page, search ?? "", category],
@@ -31,7 +38,10 @@ export default function Files() {
         ...(category !== "all" ? { category } : {}),
       });
 
-      const res = await fetch(`/api/files?${params.toString()}`);
+      const res = await fetch(`/api/files?${params.toString()}`, {
+        credentials: "include",
+      });
+
       if (!res.ok) throw new Error("Failed to fetch files");
       return res.json();
     },
@@ -42,7 +52,6 @@ export default function Files() {
 
   const displayData = data ?? previousData;
 
-  // Export all pages to Excel
   const exportAllToExcel = async () => {
     try {
       let allFiles: File[] = [];
@@ -57,10 +66,12 @@ export default function Files() {
           ...(category !== "all" ? { category } : {}),
         });
 
-        const res = await fetch(`/api/files?${params.toString()}`);
+        const res = await fetch(`/api/files?${params.toString()}`, {
+          credentials: "include",
+        });
         if (!res.ok) throw new Error("Failed to fetch files");
-        const result: PaginatedResult<File> = await res.json();
 
+        const result: PaginatedResult<File> = await res.json();
         allFiles = allFiles.concat(result.files);
         totalPages = result.totalPages;
         page++;
@@ -71,8 +82,8 @@ export default function Files() {
         return;
       }
 
-      const sheetData = allFiles.map(f => ({
-        "Destination File Name" : f.name,
+      const sheetData = allFiles.map((f) => ({
+        "Destination File Name": f.name,
         "Destination File Url": `${window.location.origin}/api/files/${f.id}/view`,
       }));
 

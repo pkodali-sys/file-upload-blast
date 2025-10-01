@@ -16,6 +16,8 @@ import {
 } from "../shared/schema.js";
 import { createTables } from "./migrate.js";
 import { storage, DatabaseStorage } from "./storage.js";
+import connectPgSimple from "connect-pg-simple";
+
 
 // ES modules equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -29,8 +31,6 @@ interface SimpleFile {
   originalName: string;
   size: number;
   mimeType: string;
-  category: string;
-  amount?: string;
   uploadedAt: string;
   isProcessed: boolean;
   localPath: string;
@@ -124,51 +124,6 @@ const upload = multer({
   },
 });
 
-// Simple categorization function
-function categorizeFile(filename: string, mimeType: string): string {
-  const name = filename.toLowerCase();
-
-  if (
-    name.includes("receipt") ||
-    name.includes("coffee") ||
-    name.includes("lunch") ||
-    name.includes("dinner")
-  ) {
-    return "Business Expense";
-  } else if (
-    name.includes("grocery") ||
-    name.includes("shared") ||
-    name.includes("utility")
-  ) {
-    return "Shared Bill";
-  } else if (
-    name.includes("invoice") ||
-    name.includes("office") ||
-    name.includes("supplies")
-  ) {
-    return "Business Expense";
-  } else if (
-    name.includes("personal") ||
-    name.includes("medical") ||
-    name.includes("insurance")
-  ) {
-    return "Personal Expense";
-  } else if (
-    name.includes("tax") ||
-    name.includes("1099") ||
-    name.includes("w2")
-  ) {
-    return "Tax Document";
-  }
-
-  return "Business Expense"; // default
-}
-
-// Simple amount extraction
-function extractAmount(filename: string): number | null {
-  const match = filename.match(/\$?(\d+\.?\d*)/);
-  return match ? parseFloat(match[1]) : null;
-}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize database tables first
@@ -199,7 +154,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   app.set("trust proxy", 1);
-  app.use(session(sessionSettings));
+  // app.use(session(sessionSettings));
+//   app.use(session({
+//   store: sessionStore, // or switch to connect-pg-simple
+//   secret: process.env.SESSION_SECRET!,
+//   resave: false,
+//   saveUninitialized: false,
+//   rolling: true, // refresh expiry on activity
+//   cookie: {
+//     maxAge: 3600000, // 1 hour
+//     httpOnly: true,
+//     secure: false, // true if HTTPS
+//     sameSite: "lax", // or "none" with CORS
+//   },
+// }));
+  const PgSession = connectPgSimple(session);
+  app.use(session({
+    store: new PgSession({
+      conString: process.env.DATABASE_URL,
+    }),
+    secret: process.env.SESSION_SECRET!,
+    resave: false,
+    saveUninitialized: false,
+    cookie: { maxAge: 3600000, httpOnly: true, sameSite: "lax" },
+  }));
   app.use(passport.initialize());
   app.use(passport.session());
 
@@ -319,17 +297,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const processedFiles = [];
 
         for (const file of uploadedFiles) {
-          const category = categorizeFile(file.originalname, file.mimetype);
-          const amount = extractAmount(file.originalname);
-
           const fileData: SimpleFile = {
             id: randomUUID(), // Temporary ID, will be replaced by database
             name: file.originalname, // This should always be the original filename
             originalName: file.originalname,
             size: file.size,
             mimeType: file.mimetype,
-            category,
-            amount: amount ? amount.toString() : undefined,
             uploadedAt: new Date().toISOString(),
             isProcessed: true,
             localPath: file.path,
@@ -393,7 +366,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         page = "1",
         limit = "10",
         search,
-        category,
       } = req.query as Record<string, string>;
 
       let filteredFiles = await storage.getAllFiles();
@@ -404,14 +376,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filteredFiles = filteredFiles.filter(
           (file) =>
             file.name.toLowerCase().includes(searchTerm) ||
-            file.originalName.toLowerCase().includes(searchTerm) ||
-            file.category.toLowerCase().includes(searchTerm)
-        );
-      }
-
-      if (category) {
-        filteredFiles = filteredFiles.filter(
-          (file) => file.category === category
+            file.originalName.toLowerCase().includes(searchTerm)
         );
       }
 

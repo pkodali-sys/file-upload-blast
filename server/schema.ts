@@ -106,7 +106,6 @@ export interface SimpleFile {
   originalName: string;
   size: number;
   mimeType: string;
-  category: string;
   amount?: string;
   uploadedAt: string;
   isProcessed: boolean;

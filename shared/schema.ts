@@ -45,8 +45,6 @@ export const files = pgTable(
     storedName: text("stored_name").notNull(),
     mimeType: text("mime_type").notNull(),
     size: bigint("size", { mode: "number" }).notNull(),
-    category: text("category").notNull(),
-    amount: numeric("amount", { precision: 12, scale: 2 }),
     uploadedAt: timestamp("uploaded_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
@@ -58,7 +56,6 @@ export const files = pgTable(
   },
   (table) => ({
     uploadedAtIdx: index("idx_files_uploaded_at").on(table.uploadedAt.desc()),
-    categoryIdx: index("idx_files_category").on(table.category),
     sourceIdx: index("idx_files_source").on(table.source),
   })
 );
@@ -106,8 +103,6 @@ export interface SimpleFile {
   originalName: string;
   size: number;
   mimeType: string;
-  category: string;
-  amount?: string;
   uploadedAt: string;
   isProcessed: boolean;
   localPath: string;
@@ -118,7 +113,6 @@ export interface FileSearchParams {
   page?: number;
   limit?: number;
   search?: string;
-  category?: string;
   source?: string;
 }
 
