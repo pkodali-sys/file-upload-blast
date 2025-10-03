@@ -43,15 +43,13 @@ const sessionStore = new MemStoreSession({
   ttl: 3600000, // 1 hour TTL to match session maxAge
 });
 
-// Hardcoded user credentials
 const USERS = [
-  { id: "0", username: "TBS_Admin", password: "HorseRunning18Miles!@" },
-  { id: "1", username: "User_Tao", password: "TBS_Marketing!2025!" },
-  { id: "2", username: "User_Diem", password: "TBS_Marketing!2025!" },
-  { id: "3", username: "User_Stefania", password: "TBS_Marketing!2025!" },
-  { id: "4", username: "User_The_Mike", password: "TBS_Marketing!2025!" },
+  { id: "0", username: "TBS_Admin", password: process.env.ADMIN_PASS?.trim() },
+  { id: "1", username: "tyu", password: process.env.TYU_PASS?.trim() },
+  { id: "2", username: "dinguyen", password: process.env.DINGUYEN_PASS?.trim() },
+  { id: "3", username: "spezzaniti", password: process.env.SPEZZANITI_PASS?.trim() },
+  { id: "4", username: "mpetersen", password: process.env.MPETERSEN_PASS?.trim() },
 ];
-
 // Helper function to find user by username and password
 const findUser = (username: string, password: string): User | null => {
   const user = USERS.find(
