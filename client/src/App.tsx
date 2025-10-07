@@ -12,10 +12,20 @@ import FtpStatus from "@/pages/FtpStatus";
 import AuthPage from "@/pages/auth-page";
 import { AuthProvider } from "@/hooks/use-auth";
 import { ProtectedRoute } from "@/lib/protected-route";
+import { useEffect } from "react";
 
 function Router() {
   const [location] = useLocation();
   const isAuthPage = location === "/auth";
+
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("_redirected")) {
+      console.log("Detected redirected flag in React — sending user to Fisher Investments.");
+      window.location.href = "https://www.fisherinvestments.com/";
+    }
+  }, [location]);
 
   return (
     <div className="min-h-screen bg-background">
