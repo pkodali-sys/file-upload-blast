@@ -53,7 +53,7 @@ export const files = pgTable(
     sha256: text("sha256"),
     uploaderUserId: text("uploader_user_id"),
     isProcessed: boolean("is_processed").notNull().default(false),
-  },
+    category: text("category").notNull().default("general"),  },
   (table) => ({
     uploadedAtIdx: index("idx_files_uploaded_at").on(table.uploadedAt.desc()),
     sourceIdx: index("idx_files_source").on(table.source),

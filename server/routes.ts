@@ -34,6 +34,7 @@ interface SimpleFile {
   uploadedAt: string;
   isProcessed: boolean;
   localPath: string;
+  category?: string;
 }
 
 // Authentication Setup - All in one place
@@ -304,6 +305,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             uploadedAt: new Date().toISOString(),
             isProcessed: true,
             localPath: file.path,
+            category: "All"
           };
 
           // Save file metadata to database and get the actual database-generated ID
@@ -347,6 +349,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({ files: processedFiles });
       } catch (error) {
         console.error("File upload error:", error);
+        console.error("File upload error stack:", error.stack || error);
+
         res.status(500).json({ message: "Failed to upload files" });
       }
     }
@@ -403,27 +407,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get single file
-  app.get("/api/files/:id", async (req, res) => {
-      res.set({
-        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate", // Disable caching
-        "Pragma": "no-cache", // Older HTTP/1.0 cache
-        "Expires": "0", // Make sure content isn't cached
-      });
-    try {
-      const { id } = req.params;
-      const file = await storage.getFile(id);
-
-      if (!file) {
-        return res.status(404).json({ message: "File not found" });
-      }
-
-      res.json({ file });
-    } catch (error) {
-      console.error("Get file error:", error);
-      res.status(500).json({ message: "Failed to fetch file" });
-    }
+  // Get single file (PROTECTED)
+app.get("/api/files/:id", requireAuth, async (req, res) => {
+  res.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
   });
+  try {
+    const { id } = req.params;
+    const file = await storage.getFile(id);
+
+    if (!file) {
+      return res.status(404).json({ message: "File not found" });
+    }
+
+    res.json({ file });
+  } catch (error) {
+    console.error("Get file error:", error);
+    res.status(500).json({ message: "Failed to fetch file" });
+  }
+});
+
 
   // View file - PUBLIC endpoint for file sharing (NO AUTHENTICATION REQUIRED)
   app.get("/api/files/:id/view", async (req, res) => {

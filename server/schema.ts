@@ -45,7 +45,7 @@ export const files = pgTable(
     storedName: text("stored_name").notNull(),
     mimeType: text("mime_type").notNull(),
     size: bigint("size", { mode: "number" }).notNull(),
-    category: text("category").notNull(),
+    category: text("category"),
     amount: numeric("amount", { precision: 12, scale: 2 }),
     uploadedAt: timestamp("uploaded_at", { withTimezone: true })
       .notNull()

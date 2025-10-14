@@ -23,7 +23,9 @@ const allowedIPs = [
   "::ffff:127.0.0.1",
   "172.24.29.4",
   "72.3.174.64",
-  "::ffff:72.3.174.64"
+  "::ffff:72.3.174.64",
+  "10.137.107.52",
+  "::ffff:10.137.107.52"
 ];
 
 app.use((req, res, next) => {
@@ -67,7 +69,7 @@ app.use((req, res, next) => {
     ) {
       const redirectWithFlag = `${redirectUrl}?_redirected=1`;
       console.log(`🚫 Blocked IP ${cleanedIP}, redirecting once → ${redirectWithFlag}`);
-      return res.redirect(302, redirectWithFlag);
+      // return res.redirect(302, redirectWithFlag);
     }
 
     // ✅ Continue if already redirected or not matching
