@@ -180,6 +180,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  // ✅ Add this before route registration
+app.use("/api", (req, res, next) => {
+  const path = req.path;
+  if (
+    path === "/login" ||
+    path === "/logout" ||
+    path === "/user" ||
+    path.endsWith("/view")
+  ) {
+    return next();
+  }
+
+  return requireAuth(req, res, next);
+});
+
   // Passport local strategy with hardcoded credentials
   passport.use(
     new LocalStrategy(async (username, password, done) => {

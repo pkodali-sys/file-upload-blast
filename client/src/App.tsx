@@ -35,7 +35,7 @@ function Router() {
         <ProtectedRoute path="/upload" component={Upload} />
         <ProtectedRoute path="/files" component={Files} />
         <Route path="/auth" component={AuthPage} />
-        <Route component={NotFound} />
+        {/* <Route component={NotFound} /> */}
       </Switch>
     </div>
   );
