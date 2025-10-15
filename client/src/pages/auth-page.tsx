@@ -83,7 +83,6 @@ export default function AuthPage() {
             <h3 className="font-semibold mb-2">Key Features:</h3>
             <ul className="text-sm text-muted-foreground space-y-1">
               <li>• PDF Support</li>
-              <li>• Secure FTP cloud storage</li>
               <li>• Public file sharing with copy links</li>
               <li>• Document Management</li>
             </ul>

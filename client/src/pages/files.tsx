@@ -2,13 +2,6 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { DownloadIcon, SearchIcon } from "lucide-react";
 import FilesTable from "@/components/files-table";
 import * as XLSX from "xlsx";
@@ -45,7 +38,7 @@ export default function Files() {
       if (!res.ok) throw new Error("Failed to fetch files");
       return res.json();
     },
-    onSuccess: (newData) => {
+    onSuccess: (newData: any) => {
       setPreviousData(newData);
     },
   });
