@@ -501,6 +501,75 @@ app.get("/api/files/:id", requireAuth, async (req, res) => {
     }
   });
 
+  // Update (replace) a PDF file by ID - PROTECTED
+// Update (replace) a PDF file by ID - PROTECTED
+  app.put(
+    "/api/files/:id",
+    requireAuth,
+    upload.single("file"), // Expecting one updated file
+    async (req, res) => {
+      res.set({
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+      });
+
+      try {
+        const { id } = req.params;
+        const uploadedFile = req.file;
+
+        const existingFile = await storage.getFile(id);
+        if (!existingFile) {
+          return res.status(404).json({ message: "File not found" });
+        }
+
+        // If no file uploaded, just update metadata (like name/category)
+        if (!uploadedFile) {
+          const { name, category } = req.body;
+          const updatedFile = await storage.updateFile(id, { name });
+          return res.json({
+            message: "File metadata updated successfully",
+            file: updatedFile,
+          });
+        }
+
+        // Remove old local file if exists
+        if (existingFile.localPath && fs.existsSync(existingFile.localPath)) {
+          fs.unlinkSync(existingFile.localPath);
+        }
+
+        const updatedFile: Partial<SimpleFile> = {
+          name: uploadedFile.originalname,
+          originalName: uploadedFile.originalname,
+          size: uploadedFile.size,
+          mimeType: uploadedFile.mimetype,
+          uploadedAt: new Date().toISOString(),
+          isProcessed: true,
+          localPath: uploadedFile.path,
+          category: "All",
+        };
+
+        // Update metadata in PostgreSQL
+        await storage.updateFile(id, updatedFile);
+
+        // Replace file content (binary) in fileBlobs table
+        if (storage instanceof DatabaseStorage) {
+          const fileContent = fs.readFileSync(uploadedFile.path);
+          await storage.saveFileContent(id, fileContent);
+        }
+
+        res.json({
+          message: "File updated successfully",
+          file: { id, ...updatedFile },
+        });
+      } catch (error) {
+        console.error("Update file error:", error);
+        res.status(500).json({ message: "Failed to update file" });
+      }
+    }
+  );
+
+
   // Delete file endpoint - PROTECTED
   app.delete("/api/files/:id", requireAuth, async (req, res) => {
     res.set({

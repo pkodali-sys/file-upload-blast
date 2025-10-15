@@ -1,52 +1,58 @@
-// Storage interface with database support
 import {
   SimpleFile,
   File,
   InsertFile,
   FileSearchParams,
   PaginatedResult,
+  files,
+  fileBlobs,
 } from "shared/schema";
+import { db } from "./db";
 import MemoryStore from "memorystore";
 import session from "express-session";
-import { db } from "./db";
-import { files, fileBlobs } from "shared/schema";
 import { eq, desc, like, and, count, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 const MemStoreSession = MemoryStore(session);
 
+/* ================================
+   Interface
+================================ */
 export interface IStorage {
-  // File operations (existing for compatibility)
+  // File ops (legacy + compatibility)
   saveFile(file: SimpleFile): Promise<SimpleFile>;
   getFile(id: string): Promise<SimpleFile | null>;
   getAllFiles(): Promise<SimpleFile[]>;
   deleteFile(id: string): Promise<boolean>;
 
-  // New database operations
+  // DB-backed operations
   saveFileMetadata(file: InsertFile): Promise<File>;
   getFileMetadata(id: string): Promise<File | null>;
   getFiles(params: FileSearchParams): Promise<PaginatedResult<File>>;
   saveFileContent(fileId: string, content: Buffer): Promise<void>;
   getFileContent(fileId: string): Promise<Buffer | null>;
   deleteFileComplete(id: string): Promise<boolean>;
+  updateFileMetadata(id: string, updatedFields: Partial<InsertFile>): Promise<File | null>;
+  updateFile(id: string, updatedFile: Partial<SimpleFile>): Promise<SimpleFile | null>;
 
   // Migration helpers
   migrateFromMemory(memoryFiles: SimpleFile[]): Promise<void>;
 
-  // Session store for authentication
+  // Auth/session store
   sessionStore: session.Store;
 }
 
+/* ================================
+   PostgreSQL-backed Storage
+================================ */
 export class DatabaseStorage implements IStorage {
   sessionStore: session.Store;
 
   constructor() {
-    this.sessionStore = new MemStoreSession({
-      checkPeriod: 86400000, // prune expired entries every 24h
-    });
+    this.sessionStore = new MemStoreSession({ checkPeriod: 86400000 }); // prune daily
   }
 
-  // Legacy compatibility methods
+  // ========== Legacy Compatibility ==========
   async saveFile(file: SimpleFile): Promise<SimpleFile> {
     const insertFile: InsertFile = {
       originalName: file.originalName,
@@ -56,6 +62,7 @@ export class DatabaseStorage implements IStorage {
       source: "local",
       storageUrl: file.localPath,
       isProcessed: file.isProcessed,
+      category: "all",
     };
 
     const dbFile = await this.saveFileMetadata(insertFile);
@@ -69,14 +76,14 @@ export class DatabaseStorage implements IStorage {
 
   async getAllFiles(): Promise<SimpleFile[]> {
     const result = await this.getFiles({ page: 1, limit: 1000 });
-    return result.data.map((file) => this.convertToSimpleFile(file));
+    return result.data.map((f) => this.convertToSimpleFile(f));
   }
 
   async deleteFile(id: string): Promise<boolean> {
     return this.deleteFileComplete(id);
   }
 
-  // New database operations
+  // ========== Database Operations ==========
   async saveFileMetadata(file: InsertFile): Promise<File> {
     const [newFile] = await db.insert(files).values(file).returning();
     return newFile;
@@ -87,63 +94,41 @@ export class DatabaseStorage implements IStorage {
     return file || null;
   }
 
-  // async getFiles(params: FileSearchParams): Promise<PaginatedResult<File>> {
-  //   const page = params.page || 1;
-  //   const limit = params.limit || 20;
-  //   const offset = (page - 1) * limit;
+  async updateFileMetadata(id: string, updatedFields: Partial<InsertFile>): Promise<File | null> {
+    const updates = Object.fromEntries(
+      Object.entries(updatedFields).filter(([_, v]) => v !== undefined)
+    );
 
-  //   // Build where conditions
-  //   const conditions = [];
+    if (Object.keys(updates).length === 0) return this.getFileMetadata(id);
 
-  //   if (params.search) {
-  //     conditions.push(
-  //       or(
-  //         like(files.originalName, `%${params.search}%`),
-  //         like(files.storedName, `%${params.search}%`)
-  //       )
-  //     );
-  //   }
+    const [updatedFile] = await db
+      .update(files)
+      .set({ ...updates, uploadedAt: sql`NOW()` })
+      .where(eq(files.id, id))
+      .returning();
 
-  //   if (params.category) {
-  //     conditions.push(eq(files.category, params.category));
-  //   }
+    return updatedFile || null;
+  }
 
-  //   if (params.source) {
-  //     conditions.push(eq(files.source, params.source));
-  //   }
+  async updateFile(id: string, updatedFile: Partial<SimpleFile>): Promise<SimpleFile | null> {
+    const updateData: Partial<InsertFile> = {};
 
-  //   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    if (updatedFile.originalName) updateData.originalName = updatedFile.originalName;
+    if (updatedFile.name) updateData.storedName = updatedFile.name;
+    if (updatedFile.mimeType) updateData.mimeType = updatedFile.mimeType;
+    if (updatedFile.size) updateData.size = updatedFile.size;
+    if (updatedFile.localPath) updateData.storageUrl = updatedFile.localPath;
+    if (updatedFile.isProcessed !== undefined) updateData.isProcessed = updatedFile.isProcessed;
 
-  //   // Get total count
-  //   const [{ total }] = await db
-  //     .select({ total: count() })
-  //     .from(files)
-  //     .where(whereClause);
+    const dbFile = await this.updateFileMetadata(id, updateData);
+    return dbFile ? this.convertToSimpleFile(dbFile) : null;
+  }
 
-  //   // Get paginated data
-  //   const data = await db
-  //     .select()
-  //     .from(files)
-  //     .where(whereClause)
-  //     .orderBy(desc(files.uploadedAt))
-  //     .limit(limit)
-  //     .offset(offset);
-
-  //   return {
-  //     data,
-  //     total: Number(total),
-  //     page,
-  //     limit,
-  //     totalPages: Math.ceil(Number(total) / limit),
-  //   };
-  // }
-
-    async getFiles(params: FileSearchParams): Promise<PaginatedResult<File>> {
-    const page = params.page || 1;
-    const limit = params.limit || 20;
+  async getFiles(params: FileSearchParams): Promise<PaginatedResult<File>> {
+    const page = params.page ?? 1;
+    const limit = params.limit ?? 20;
     const offset = (page - 1) * limit;
 
-    // Build where conditions
     const conditions = [];
 
     if (params.search) {
@@ -156,19 +141,12 @@ export class DatabaseStorage implements IStorage {
       );
     }
 
-    if (params.source) {
-      conditions.push(eq(files.source, params.source));
-    }
+    if (params.source) conditions.push(eq(files.source, params.source));
 
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const whereClause = conditions.length ? and(...conditions) : undefined;
 
-    // Get total count
-    const [{ total }] = await db
-      .select({ total: count() })
-      .from(files)
-      .where(whereClause);
+    const [{ total }] = await db.select({ total: count() }).from(files).where(whereClause);
 
-    // Get paginated data
     const data = await db
       .select()
       .from(files)
@@ -182,19 +160,15 @@ export class DatabaseStorage implements IStorage {
       total: Number(total),
       page,
       limit,
-      totalPages: Math.ceil(Number(total) / limit) || 1,
+      totalPages: Math.max(1, Math.ceil(Number(total) / limit)),
     };
   }
-
 
   async saveFileContent(fileId: string, content: Buffer): Promise<void> {
     const base64Content = content.toString("base64");
     await db
       .insert(fileBlobs)
-      .values({
-        fileId,
-        content: base64Content,
-      })
+      .values({ fileId, content: base64Content })
       .onConflictDoUpdate({
         target: fileBlobs.fileId,
         set: { content: base64Content },
@@ -202,13 +176,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getFileContent(fileId: string): Promise<Buffer | null> {
-    const [blob] = await db
-      .select()
-      .from(fileBlobs)
-      .where(eq(fileBlobs.fileId, fileId));
-    if (!blob) return null;
-
-    return Buffer.from(blob.content, "base64");
+    const [blob] = await db.select().from(fileBlobs).where(eq(fileBlobs.fileId, fileId));
+    return blob ? Buffer.from(blob.content, "base64") : null;
   }
 
   async deleteFileComplete(id: string): Promise<boolean> {
@@ -228,11 +197,10 @@ export class DatabaseStorage implements IStorage {
           storageUrl: file.localPath,
           isProcessed: file.isProcessed,
         };
-
         await this.saveFileMetadata(insertFile);
-        console.log(`Migrated file: ${file.originalName}`);
+        console.log(`✅ Migrated file: ${file.originalName}`);
       } catch (error) {
-        console.error(`Failed to migrate file ${file.originalName}:`, error);
+        console.error(`❌ Migration failed for ${file.originalName}:`, error);
       }
     }
   }
@@ -246,19 +214,20 @@ export class DatabaseStorage implements IStorage {
       mimeType: dbFile.mimeType,
       uploadedAt: dbFile.uploadedAt.toISOString(),
       isProcessed: dbFile.isProcessed,
-      localPath: dbFile.storageUrl || "",
+      localPath: dbFile.storageUrl ?? "",
     };
   }
 }
 
+/* ================================
+   Memory Storage (fallback)
+================================ */
 export class MemStorage implements IStorage {
   private files: SimpleFile[] = [];
   sessionStore: session.Store;
 
   constructor() {
-    this.sessionStore = new MemStoreSession({
-      checkPeriod: 86400000, // prune expired entries every 24h
-    });
+    this.sessionStore = new MemStoreSession({ checkPeriod: 86400000 });
   }
 
   async saveFile(file: SimpleFile): Promise<SimpleFile> {
@@ -267,7 +236,7 @@ export class MemStorage implements IStorage {
   }
 
   async getFile(id: string): Promise<SimpleFile | null> {
-    return this.files.find((file) => file.id === id) || null;
+    return this.files.find((f) => f.id === id) || null;
   }
 
   async getAllFiles(): Promise<SimpleFile[]> {
@@ -275,19 +244,25 @@ export class MemStorage implements IStorage {
   }
 
   async deleteFile(id: string): Promise<boolean> {
-    const index = this.files.findIndex((file) => file.id === id);
-    if (index >= 0) {
-      this.files.splice(index, 1);
+    const i = this.files.findIndex((f) => f.id === id);
+    if (i >= 0) {
+      this.files.splice(i, 1);
       return true;
     }
     return false;
   }
 
-  // Stub implementations for database methods
+  // Stubs for DB features
   async saveFileMetadata(): Promise<any> {
     throw new Error("Not implemented in MemStorage");
   }
   async getFileMetadata(): Promise<any> {
+    throw new Error("Not implemented in MemStorage");
+  }
+  async updateFileMetadata(): Promise<any> {
+    throw new Error("Not implemented in MemStorage");
+  }
+  async updateFile(): Promise<any> {
     throw new Error("Not implemented in MemStorage");
   }
   async getFiles(): Promise<any> {
@@ -307,6 +282,8 @@ export class MemStorage implements IStorage {
   }
 }
 
-// Use database storage by default, fallback to memory for development
-const USE_DATABASE = process.env.USE_DATABASE !== "false"; // Default to true
+/* ================================
+   Export Active Storage
+================================ */
+const USE_DATABASE = process.env.USE_DATABASE !== "false";
 export const storage = USE_DATABASE ? new DatabaseStorage() : new MemStorage();

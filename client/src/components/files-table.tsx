@@ -131,7 +131,7 @@ export default function FilesTable({
         title: "File deleted",
         description: "The file has been successfully deleted.",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/files"] });
+      queryClient.invalidateQueries({ queryKey: ["files"] });
     },
     onError: (error) => {
       toast({
@@ -157,6 +157,44 @@ export default function FilesTable({
       setSelectedFiles([]);
     }
   };
+
+  const handleFileUpdate = async (e: React.ChangeEvent<HTMLInputElement>, fileId: string) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  try {
+    const res = await fetch(`/api/files/${fileId}`, {
+      method: "PUT",
+      body: formData,
+      credentials: "include",
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || "Failed to update file");
+    }
+
+    toast({
+      title: "File updated",
+      description: `The file "${file.name}" has been replaced successfully.`,
+    });
+
+    queryClient.invalidateQueries({ queryKey: ["files"] });
+  } catch (err: any) {
+    toast({
+      title: "Update failed",
+      description: err.message || "Could not update the file.",
+      variant: "destructive",
+    });
+  } finally {
+    // reset input so user can upload same file again if needed
+    e.target.value = "";
+  }
+};
+
 
   const handleDelete = (fileId: string) => {
     if (confirm("Are you sure you want to delete this file?")) {
@@ -221,13 +259,13 @@ export default function FilesTable({
                   data-testid="checkbox-select-all"
                 />
               </th> */}
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <th className="px-8 py-3 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">
                 File Name
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Date Uploaded
+              <th className="px-6 py-3 text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                Date Uploaded / Updated
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <th className="px-6 py-3 text-center text-xs font-bold text-muted-foreground uppercase tracking-wider">
                 Actions
               </th>
             </tr>
@@ -266,7 +304,7 @@ export default function FilesTable({
                     {formatDate(file.uploadedAt)}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap">
+                {/* <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center space-x-2">
                     <Button 
                       variant="default" 
@@ -289,7 +327,54 @@ export default function FilesTable({
                       Delete
                     </Button>
                   </div>
+                </td> */}
+
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="flex items-center space-x-2">
+                    <Button 
+                      variant="default" 
+                      size="sm"
+                      onClick={() => handleCopyLink(file.id)}
+                      className="p-3 text-white rounded transition-colors duration-200 hover:scale-105"
+                      data-testid={`button-copy-link-${file.id}`}
+                    >
+                      Copy Link
+                    </Button>
+
+                    {/* Hidden file input for update */}
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      style={{ display: "none" }}
+                      id={`update-input-${file.id}`}
+                      onChange={(e) => handleFileUpdate(e, file.id)}
+                    />
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        document.getElementById(`update-input-${file.id}`)?.click()
+                      }
+                      className="p-3 rounded transition-colors duration-200 hover:scale-105"
+                      data-testid={`button-update-${file.id}`}
+                    >
+                      Update
+                    </Button>
+
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => handleDelete(file.id)}
+                      disabled={deleteMutation.isPending}
+                      className="p-3 text-white rounded transition-colors duration-200 hover:scale-105"
+                      data-testid={`button-delete-${file.id}`}
+                    >
+                      Delete
+                    </Button>
+                  </div>
                 </td>
+
               </tr>
             ))}
           </tbody>
